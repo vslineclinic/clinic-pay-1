@@ -1,4 +1,10 @@
 pandas
+numpy
 streamlit>=1.32.0
 openpyxl
 xlsxwriter
+xlrd>=2.0.1
+lxml
+html5lib
+beautifulsoup4
+msoffcrypto-tool
