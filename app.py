@@ -233,29 +233,48 @@ def normalize_daily(df):
 
 
 def normalize_chart(df):
-    """차트마감 데이터 정제 → 차트번호별 수단 합계 + 승인번호→차트 매핑."""
+    """차트마감 데이터 정제 → 차트번호별 수단별 **순수납액**(환불 반영).
+
+    반환:
+      pivot            : 차트번호 × 수단 순액 (환불 차감)
+      appr_to_chart    : 승인번호→차트 매핑 (승인번호 컬럼이 있을 때만; 실제 베가스
+                         내보내기엔 없어 비어 있을 수 있음)
+      chart_card_rows  : 개별 카드 청구행(양수 총액) — 한솔과 금액 매칭용
+      refund_by_chart  : 차트번호별 환불액 (진단·가설 근거)
+    """
     df = df.copy()
     df.columns = [str(c).strip() for c in df.columns]
+
+    # 합계/소계 등 비데이터 행 제거 (실제 파일 맨 끝 '합계' 행이 존재)
+    if "수납일" in df.columns:
+        df = df[~df["수납일"].astype(str).str.contains("합계|소계|총계", na=False)]
+    if "차트번호" in df.columns:
+        df = df[df["차트번호"].notna()]
     df["차트번호"] = df["차트번호"].apply(clean_no) if "차트번호" in df.columns else "-"
 
-    calc_cols = [c for c in ["비급여(과세총금액)", "비급여(비과세)", "본부금"] if c in df.columns]
-    for c in calc_cols:
+    charge_cols = [c for c in ["비급여(과세총금액)", "비급여(비과세)", "본부금"] if c in df.columns]
+    refund_cols = [c for c in ["환불(과세총금액)", "환불(비과세)", "환불(본부금)"] if c in df.columns]
+    for c in charge_cols + refund_cols:
         df[c] = df[c].apply(clean_money)
-    df["수납액"] = df[calc_cols].sum(axis=1) if calc_cols else 0
+    df["_gross"] = df[charge_cols].sum(axis=1) if charge_cols else 0
+    df["_refund"] = df[refund_cols].sum(axis=1) if refund_cols else 0
+    df["수납액"] = df["_gross"] - df["_refund"]   # ★ 환불 반영한 순수납액
 
-    method = df.get("결제수단", pd.Series([""] * len(df))).astype(str)
-    df["분류"] = "기타"
-    df.loc[method.str.contains("카드"), "분류"] = "카드"
-    df.loc[method.str.contains("현금"), "분류"] = "현금"
-    df.loc[method.str.contains("통장|이체"), "분류"] = "이체"
-    df.loc[method.str.contains("강남|여신|닥터|지역화폐|플랫폼"), "분류"] = "플랫폼"
+    # 결제수단 분류 (우선순위: 카드 > 이체 > 현금 > 플랫폼).
+    # np.select은 첫 매칭을 택하므로 '통장입금(현금영수증)'이 현금으로 오분류되지 않는다.
+    # '기타(기타)'는 이 병원에서 플랫폼(강남언니/여신티켓/나만의닥터) 예약을 의미.
+    m = df.get("결제수단", pd.Series([""] * len(df), index=df.index)).astype(str)
+    df["분류"] = np.select(
+        [m.str.contains("카드"), m.str.contains("통장|이체"), m.str.contains("현금")],
+        ["카드", "이체", "현금"],
+        default="플랫폼",
+    )
 
-    # 승인번호 → 차트번호 매핑 (수정된 정규식)
+    # 승인번호 → 차트번호 매핑 (승인번호 컬럼이 있는 내보내기에서만 채워짐)
     appr_to_chart = {}
-    src_col = "승인번호" if "승인번호" in df.columns else ("결제메모" if "결제메모" in df.columns else None)
-    if src_col:
+    if "승인번호" in df.columns:
         for _, row in df.iterrows():
-            for appr in extract_appr_list(row[src_col]):
+            for appr in extract_appr_list(row["승인번호"]):
                 appr_to_chart[appr] = row["차트번호"]
 
     name_col = "이름" if "이름" in df.columns else ("성명" if "성명" in df.columns else None)
@@ -269,54 +288,106 @@ def normalize_chart(df):
         pivot["이름"] = pivot["차트번호"].map(names)
     else:
         pivot["이름"] = ""
-    return pivot, appr_to_chart
+
+    chart_card_rows = df[(df["분류"] == "카드") & (df["_gross"] > 0)][["차트번호", "_gross"]] \
+        .rename(columns={"_gross": "금액"}).reset_index(drop=True)
+    refund_by_chart = df[df["_refund"] > 0].groupby("차트번호", as_index=False)["_refund"].sum() \
+        .rename(columns={"_refund": "환불액"})
+    return pivot, appr_to_chart, chart_card_rows, refund_by_chart
 
 
 # =============================================================================
 # 4. 대사 + 환불/오류 추론 엔진
 # =============================================================================
 
-def link_hansol_to_chart(hansol_card, appr_to_chart):
-    """한솔 카드 거래를 승인번호로 차트번호에 연결 → 차트번호별 한솔 카드합계."""
-    hansol_card = hansol_card.copy()
-    hansol_card["차트번호"] = hansol_card["승인번호"].map(appr_to_chart).fillna("(미연결)")
+def link_hansol_to_chart(hansol_card, appr_to_chart, chart_card_rows=None):
+    """한솔 카드 거래를 차트번호에 연결 → 차트번호별 한솔 카드합계.
+
+    1순위: 승인번호 매핑(있을 때).
+    2순위: 금액 매칭. 실제 베가스 차트엔 승인번호가 없어 금액으로만 연결한다.
+           같은 금액이 양쪽에 각각 1건씩일 때만 연결(모호하면 미연결로 남김).
+    반환: (차트번호별 한솔카드합계 df, 미연결 총액, 매칭 진단 dict)
+    """
+    hansol_card = hansol_card.copy().reset_index(drop=True)
+    hansol_card["차트번호"] = hansol_card["승인번호"].map(appr_to_chart) if appr_to_chart else None
+
+    diag = {"by_appr": int(hansol_card["차트번호"].notna().sum()),
+            "by_amount": 0, "unmatched_hansol": [], "unmatched_chart": []}
+
+    # 금액 매칭 (승인번호로 못 붙은 한솔 거래 대상)
+    if chart_card_rows is not None and len(chart_card_rows):
+        need = hansol_card["차트번호"].isna()
+        h_by_amt = {}
+        for i, amt in hansol_card.loc[need, "금액"].items():
+            h_by_amt.setdefault(int(amt), []).append(i)
+        c_by_amt = {}
+        for _, r in chart_card_rows.iterrows():
+            c_by_amt.setdefault(int(r["금액"]), []).append(r["차트번호"])
+        for amt, hidxs in h_by_amt.items():
+            cands = c_by_amt.get(amt, [])
+            # 1:1로 모호하지 않은 금액만 연결
+            n = min(len(hidxs), len(cands))
+            for k in range(n):
+                if len(hidxs) == 1 and len(cands) == 1:
+                    hansol_card.at[hidxs[k], "차트번호"] = cands[k]
+                    diag["by_amount"] += 1
+                else:
+                    hansol_card.at[hidxs[k], "차트번호"] = "(금액중복-확인)"
+
+    hansol_card["차트번호"] = hansol_card["차트번호"].fillna("(미연결)")
+    diag["unmatched_hansol"] = hansol_card.loc[
+        hansol_card["차트번호"].isin(["(미연결)", "(금액중복-확인)"]), "금액"].tolist()
+
     linked = hansol_card.groupby("차트번호", as_index=False)["금액"].sum().rename(columns={"금액": "한솔카드"})
-    unlinked_amt = int(hansol_card.loc[hansol_card["차트번호"] == "(미연결)", "금액"].sum())
-    return linked, unlinked_amt
+    unlinked_amt = int(hansol_card.loc[
+        hansol_card["차트번호"].isin(["(미연결)", "(금액중복-확인)"]), "금액"].sum())
+    return linked, unlinked_amt, diag
 
 
 def classify_row(d, c, h, tol=0):
     """세 소스(일마·차트·한솔)의 카드 금액을 비교해 불일치 원인을 추론.
 
-    2-of-3 합의 규칙:
-      · 한솔==차트 이면서 일마가 낮음  → 환불이 일일마감에만 반영 (차트·한솔 미반영)  ← 잠실 케이스
-      · 일마==한솔 이면서 차트가 높음  → 환불이 차트마감에 미반영 (카드취소는 정상)
-      · 일마==차트 이면서 한솔이 높음  → 한솔에 승인거절/취소 미차감 or 이중승인
-      · 한솔만 0                       → 한솔 매입 누락 or 승인번호 미연결
-      · 셋 다 상이                     → 복합 오류(수기 검토)
+    판정 원칙(우선순위):
+      1) 환자 단위로 신뢰도 높은 두 장부(일마·차트, 둘 다 차트번호 키)가 **일치**하는지
+         먼저 본다. 한솔은 승인번호가 없어 금액으로만 연결되므로 보조 증거로 쓴다.
+      2) 일마 ≠ 차트일 때만 실질 불일치로 보고, 한솔로 원인을 좁힌다.
+
+    2-of-3 합의 규칙(일마 ≠ 차트인 경우):
+      · 한솔==차트, 일마 낮음  → 환불이 일일마감에만 반영 (차트·한솔 미반영)  ← 잠실 케이스
+      · 일마==한솔, 차트 높음  → 환불이 차트마감에 미반영 (카드취소·일마는 정상)
+      · 한솔==차트, 일마 높음  → 일일마감 과다 입력
     반환: (판정라벨, 심각도, 추정환불액)
     """
     def eq(a, b):
         return abs(a - b) <= tol
 
-    diff_dc = d - c   # 일마 - 차트
-    if eq(d, c) and eq(c, h):
-        return ("✅ 일치", 0, 0)
-
-    # 한솔 미연결(0)인 경우: 승인번호 매칭 실패 가능성 우선
-    if h == 0 and (d > 0 or c > 0):
-        return ("🔌 한솔 미연결/누락 (승인번호 매칭 실패 or 매입 누락)", 2, 0)
-
-    if eq(h, c) and d < c:
-        return (f"💸 환불 미반영: 일일마감만 환불 반영 (차트·한솔 그대로) · 추정환불 {c - d:,}원", 3, c - d)
-    if eq(d, h) and c > h:
-        return (f"🩹 차트 환불 미반영: 카드취소·일마는 정상, 차트만 총액 · 추정환불 {c - h:,}원", 3, c - h)
-    if eq(d, c) and h > c:
+    # --- 1) 일마·차트(신뢰 키)가 일치 ---
+    if eq(d, c):
+        if h == 0:
+            return ("✅ 일마=차트 일치 (한솔 미연결·총액대사로 확인)", 0, 0)
+        if eq(h, c):
+            return ("✅ 일치", 0, 0)
+        if h < c:
+            # 한 환자에 카드청구가 여러 건인데 일부만 금액연결됨 → 오류 아님
+            return ("✅ 일마=차트 일치 (한솔 부분연결)", 0, 0)
+        # 두 장부는 맞는데 연결된 한솔이 초과 → 승인거절/취소 미차감·이중승인 의심
         return (f"🧾 한솔 과다: 승인거절/취소 미차감 or 이중승인 · +{h - c:,}원", 2, 0)
-    if eq(h, c) and d > c:
-        return (f"➕ 일일마감 과다 입력 · +{d - c:,}원", 2, 0)
 
-    return (f"⚠️ 복합 불일치 (일마 {d:,} / 차트 {c:,} / 한솔 {h:,})", 2, 0)
+    # --- 2) 일마 ≠ 차트: 실질 불일치. 한솔로 원인 규명 ---
+    if h > 0:
+        if eq(h, c) and d < c:
+            return (f"💸 환불 미반영: 일일마감만 환불 반영 (차트·한솔 그대로) · 추정환불 {c - d:,}원", 3, c - d)
+        if eq(d, h) and c > h:
+            return (f"🩹 차트 환불 미반영: 카드취소·일마는 정상, 차트만 총액 · 추정환불 {c - h:,}원", 3, c - h)
+        if eq(h, c) and d > c:
+            return (f"➕ 일일마감 과다 입력 · +{d - c:,}원", 2, 0)
+        if eq(d, h) and c < h:
+            return (f"➖ 차트 과소 입력 · -{h - c:,}원", 2, 0)
+
+    # 한솔 미연결이라 원인 확정 불가 — 일마·차트 차이만 보고
+    if d < c:
+        return (f"🔎 일마<차트 {c - d:,}원 (환불이 차트 미반영 의심, 한솔 미연결)", 2, c - d)
+    return (f"🔎 일마>차트 {d - c:,}원 (일마 과다 or 차트 누락, 한솔 미연결)", 2, 0)
 
 
 def reconcile(daily, chart_pivot, hansol_linked):
@@ -328,6 +399,9 @@ def reconcile(daily, chart_pivot, hansol_linked):
 
     m = pd.merge(d, c, on="차트번호", how="outer")
     m = pd.merge(m, hansol_linked, on="차트번호", how="outer")
+
+    # 실제 차트번호가 아닌 한솔 연결 버킷은 개별 판정에서 제외 (총액대사·진단에서 별도 처리)
+    m = m[~m["차트번호"].isin(["(미연결)", "(금액중복-확인)"])].copy()
 
     # 이름은 일마 우선, 없으면 차트에서 보완
     name_d = m["이름_d"].fillna("") if "이름_d" in m.columns else pd.Series([""] * len(m), index=m.index)
@@ -375,8 +449,9 @@ if file_hansol and file_daily and file_patient:
 
                 hansol_card, h_meta = normalize_hansol(df_h)
                 daily = normalize_daily(df_d)
-                chart_pivot, appr_to_chart = normalize_chart(df_p)
-                hansol_linked, unlinked_amt = link_hansol_to_chart(hansol_card, appr_to_chart)
+                chart_pivot, appr_to_chart, chart_card_rows, refund_by_chart = normalize_chart(df_p)
+                hansol_linked, unlinked_amt, link_diag = link_hansol_to_chart(
+                    hansol_card, appr_to_chart, chart_card_rows)
                 result = reconcile(daily, chart_pivot, hansol_linked)
         except Exception as e:  # noqa: BLE001
             st.error(f"❌ 처리 중 오류: {e}")
@@ -385,19 +460,28 @@ if file_hansol and file_daily and file_patient:
         # ---- 1단계: 총액 대사 (가장 빠른 1차 점검) ----
         st.subheader("① 총액 대사 (하루 전체가 맞는지 먼저 확인)")
         tot_daily_card = int(daily["카드"].sum())
-        tot_chart_card = int(chart_pivot["카드"].sum())
+        tot_chart_card = int(chart_pivot["카드"].sum())     # 환불 반영된 순액
         tot_hansol_card = h_meta.get("card_net", 0)
+        tot_chart_refund = int(refund_by_chart["환불액"].sum()) if len(refund_by_chart) else 0
         mc1, mc2, mc3, mc4 = st.columns(4)
         mc1.metric("일마 카드합계", f"{tot_daily_card:,}")
-        mc2.metric("차트 카드합계", f"{tot_chart_card:,}", delta=f"{tot_chart_card - tot_daily_card:,}")
-        mc3.metric("한솔 카드순매출", f"{tot_hansol_card:,}", delta=f"{tot_hansol_card - tot_daily_card:,}")
-        mc4.metric("한솔 미연결액", f"{unlinked_amt:,}")
+        mc2.metric("차트 카드순액", f"{tot_chart_card:,}", delta=f"{tot_chart_card - tot_hansol_card:,}")
+        mc3.metric("한솔 카드순매출", f"{tot_hansol_card:,}")
+        mc4.metric("차트 환불반영액", f"-{tot_chart_refund:,}")
+
+        if tot_chart_card == tot_hansol_card:
+            st.success(f"✅ 차트 카드순액 = 한솔 카드순매출 = {tot_hansol_card:,}원 (환불·승인거절 반영 후 총액 일치)")
+        else:
+            st.error(f"⚠️ 차트({tot_chart_card:,}) ≠ 한솔({tot_hansol_card:,}), 차이 {tot_chart_card - tot_hansol_card:,}원 — 아래 상세 확인")
 
         if h_meta.get("declined"):
             st.warning(f"⛔ 한솔에서 **승인거절/무효 {len(h_meta['declined'])}건** 을 합계에서 제외했습니다: "
                        + ", ".join(f"{r['금액']:,}원" for r in h_meta["declined"]))
+        if tot_chart_refund:
+            st.info(f"↩️ 차트에서 **환불 {tot_chart_refund:,}원** 을 순액에 반영했습니다 (기존 코드는 미반영이었음).")
         if h_meta.get("card_cancel"):
             st.warning(f"↩️ 한솔 카드 **취소·환불 {h_meta['card_cancel']:,}원** 을 상계 처리했습니다.")
+        st.caption(f"🔗 한솔→차트 연결: 승인번호 {link_diag['by_appr']}건 · 금액 {link_diag['by_amount']}건 · 미연결 {len(link_diag['unmatched_hansol'])}건")
 
         # ---- 2단계: 환불 반영 불일치 (핵심) ----
         st.subheader("② 🔴 환불 반영 불일치 (최우선 검토)")
