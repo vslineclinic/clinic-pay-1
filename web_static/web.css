@@ -6,3 +6,37 @@ html.ledger-embedded .app-shell{min-height:calc(100% - 30px)}
 html.ledger-embedded .app-shell{height:calc(100dvh - 30px);min-height:0;overflow:auto}
 
 .mobile-logout{display:none}@media(max-width:700px){.mobile-logout{display:inline-flex}}
+
+/* Keep workday text readable without changing status colors or disabled states. */
+:root{--ink:#18212f;--muted:#4b5563}
+body{font-size:15px;font-weight:500}
+.field{font-size:13px;font-weight:600;color:#20242b}
+.field input,.field select,.field textarea{font-size:14px;font-weight:500;color:#16191f;min-height:42px;line-height:1.5}
+.field input::placeholder,.field textarea::placeholder,.search-wrap input::placeholder{color:#64748b;opacity:1;font-weight:500}
+.form-section{font-size:14px;font-weight:700;color:#20242b}
+.checkbox-row,.usage-toggle span{font-size:13px;font-weight:600;color:#303740}
+.dialog-head h2{font-size:20px;font-weight:700;color:#16191f}
+.dialog-head p,.dialog-body p,.dialog-body li{font-size:13px;font-weight:500;color:#475569}
+.form-help{font-size:12px;font-weight:500;color:#64517a}
+.money-summary{font-size:13px;font-weight:600;color:#24594c}
+.money-summary b{font-size:17px;font-weight:700;color:#175342}
+.btn{font-size:13px;font-weight:650;color:#263445;min-height:38px}
+.btn.small,.wide-table .btn,.heading-actions .btn{font-size:12px;font-weight:650}
+.reconcile-table,.reconcile-table td,.wide-table td,.closing-table td{font-size:13px;font-weight:500}
+.reconcile-table th,.closing-table th{font-size:12px;font-weight:700;color:#20242b}
+.patient{font-size:14px;font-weight:650;color:#20242b}
+.reconcile-table td.amount-cell{font-size:14px;font-weight:600}
+.amount-cell:not(.negative){color:#20242b}
+.patient small,.amount-cell small,.detail-name small,.panel-subtitle,.page-heading p,.stat-label,.stat-bottom,.count-label,.table-tail,.history-filter small,.history-state,.status-cell small,.business-date-bar small,.business-date-bar>span,.footer{font-size:12px;font-weight:500;color:#475569}
+.panel-title{font-size:16px;font-weight:700;color:#20242b}
+.stat-number{font-weight:700;color:#18212f}
+.search-wrap input,.date-controls input,.business-date-bar select{font-size:14px;font-weight:600;color:#20242b}
+.filter-button{font-size:12px;font-weight:600;color:#475569}
+.filter-button b,.badge{font-size:11px;font-weight:600}
+.form-save-status,.error-message,.inline-error,.warning-box,.loading-line,.neutral-notice,.event-details,.activity-list li{font-size:13px;font-weight:500}
+.breadcrumb,.breadcrumb strong,.topbar-right,.eyebrow{font-size:12px;font-weight:600;color:#475569}
+.nav-item{font-size:14px;font-weight:600;color:#d9e2ed}
+.workspace-chip{font-size:13px}
+.workspace-chip small,.profile small,.safe-demo small,.app-switch small{font-size:11px;color:#b9c6d3}
+.profile,.safe-demo,.reset-button{font-size:12px;color:#d0dae5}
+@media(max-width:540px){.field input,.field select,.field textarea{font-size:16px}.dialog-footer .btn{white-space:normal}.dialog-head h2{font-size:19px}}
