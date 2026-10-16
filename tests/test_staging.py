@@ -14,6 +14,44 @@ def test_preview_access_requires_current_global_role():
         staging.require_preview(principal('branch', '인천점'))
 
 
+def test_preview_gate_uses_current_auth_types_after_module_reload():
+    import subprocess
+    import sys
+    import textwrap
+    from pathlib import Path
+
+    # Isolate module replacement from the other tests' imported auth classes.
+    result = subprocess.run([sys.executable, '-c', textwrap.dedent('''
+        import importlib
+        import sys
+        from types import SimpleNamespace
+        from uuid import uuid4
+        import branch_access
+        import staging
+
+        obsolete = branch_access.Principal('admin', 'admin', 'all', str(uuid4()))
+        sys.modules.pop('branch_access')
+        access = importlib.import_module('branch_access')
+        password_hash = access.hash_password('synthetic-password', iterations=100000)
+        rows = [access.ACCOUNT_HEADERS]
+        for username, role, branch in [('admin', 'admin', 'all'), ('staff', 'branch', '인천점')]:
+            rows.append([username, role, branch, password_hash, '1', str(uuid4()),
+                         '2026-10-16T00:00:00+00:00'])
+        store = access.AccountStore(SimpleNamespace(_request=lambda *a, **kw: {'values': rows}))
+        admin = store.authenticate('admin', 'synthetic-password')
+        assert staging.require_preview(admin) is admin
+        staff = store.authenticate('staff', 'synthetic-password')
+        for denied in (staff, obsolete, None, SimpleNamespace(is_admin=True)):
+            try:
+                staging.require_preview(denied)
+            except access.AccessError:
+                pass
+            else:
+                raise AssertionError('Unverified or branch principal accepted')
+    ''')], cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_missing_database_does_not_fall_back_to_temporary_disk():
     import staging
     assert staging.storage_config({}.get) is None
