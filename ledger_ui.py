@@ -204,6 +204,8 @@ def render_ledger(principal, store, validate, on_analyze=None):
     st.subheader('수납 원장 · 개발본')
     st.caption('서버 저장 응답을 확인한 행만 저장완료로 표시합니다. 공동 접속자의 인원·상태는 추정해 표시하지 않습니다.')
     st.caption('원장 안에서 A · 표형과 B · 웹형을 비교할 수 있습니다. 같은 원장과 수정 이력을 사용합니다.')
+    st.link_button('B · 전체 웹 화면을 새 탭에서 비교',
+                   'https://vsline-clinic-pay-1.streamlit.app/?ledger_view=full-web')
     left, right = st.columns(2)
     branch = left.selectbox('원장 지점', CANONICAL_BRANCHES, key='ledger_branch')
     picked_date = right.date_input('KST 영업일', value=kst_today(), key='ledger_business_date')
