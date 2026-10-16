@@ -1,0 +1,56 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: "3.11"
+            streamlit: "streamlit==1.66.0"
+          - python: "3.12"
+            streamlit: "streamlit"
+          - python: "3.13"
+            streamlit: "streamlit"
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ledger_test
+          POSTGRES_PASSWORD: local_ci_only
+          POSTGRES_DB: ledger_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ledger_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      LEDGER_TEST_DATABASE_URL: postgresql://ledger_test:local_ci_only@localhost:5432/ledger_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install supported runtime and test tools
+        run: python -m pip install -r requirements.txt '${{ matrix.streamlit }}' pytest
+      - name: Run calculation tests
+        run: python -m pytest -ra
+      - name: Exercise the real Streamlit UI
+        run: python scripts/smoke_streamlit.py
+      - name: Exercise the isolated development app
+        run: python scripts/smoke_development.py
+      - name: Exercise the login cookie bridge
+        run: node scripts/smoke_cookie_bridge.mjs
+      - name: Exercise autosave and conflict handling
+        run: node scripts/smoke_ledger_component.mjs

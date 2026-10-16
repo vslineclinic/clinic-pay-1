@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>기기 로그인 유지</title></head>
+<body><script>
+(() => {
+  "use strict";
+  const cookieName = "__Host-clinic_pay_remember";
+  const parentOrigin = window.location.origin;
+  let lastNonce = "";
+  let lastPayload = "";
+  let ack = "";
+  let ok = true;
+  const send = (type, extra) => window.parent.postMessage(
+    Object.assign({isStreamlitMessage: true, type: type}, extra), parentOrigin
+  );
+  const read = () => {
+    const prefix = cookieName + "=";
+    const part = document.cookie.split(";").map(item => item.trim()).find(item => item.startsWith(prefix));
+    return part ? decodeURIComponent(part.slice(prefix.length)) : "";
+  };
+  const publish = () => {
+    let token = "";
+    try { token = read(); } catch (_) { ok = false; }
+    const payload = {ready: true, token: token, ack: ack, ok: ok};
+    const encoded = JSON.stringify(payload);
+    if (encoded !== lastPayload) {
+      lastPayload = encoded;
+      send("streamlit:setComponentValue", {value: payload, dataType: "json"});
+    }
+  };
+  window.addEventListener("message", event => {
+    if (event.source !== window.parent || event.origin !== parentOrigin || !event.data ||
+        event.data.type !== "streamlit:render") return;
+    const command = event.data.args && event.data.args.command;
+    if (command && typeof command.nonce === "string" && command.nonce !== lastNonce) {
+      lastNonce = command.nonce;
+      ack = command.nonce;
+      ok = false;
+      try {
+        if (command.action === "clear") {
+          document.cookie = cookieName + "=; Max-Age=0; Path=/; Secure; SameSite=Strict";
+          ok = read() === "";
+        } else if (command.action === "set" && typeof command.token === "string" &&
+                   command.token.length <= 256 && /^[A-Za-z0-9._-]+$/.test(command.token) &&
+                   Number.isInteger(command.max_age) && command.max_age > 0 && command.max_age <= 15552000) {
+          document.cookie = cookieName + "=" + encodeURIComponent(command.token) +
+            "; Max-Age=" + command.max_age + "; Path=/; Secure; SameSite=Strict";
+          ok = read() === command.token;
+        }
+      } catch (_) { ok = false; }
+    }
+    publish();
+    send("streamlit:setFrameHeight", {height: 0});
+  });
+  send("streamlit:componentReady", {apiVersion: 1});
+  send("streamlit:setFrameHeight", {height: 0});
+})();
+</script></body></html>
