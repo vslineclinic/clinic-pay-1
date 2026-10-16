@@ -191,6 +191,8 @@ def test_real_streamlit_ledger_render_history_close_reopen_and_backup(tmp_path):
         at.selectbox(key='ledger_branch').set_value('잠실점'); ok()
         assert any('잠실점' in c.value and '개정 0' in c.value for c in at.caption)
         blocked = AppTest.from_string({blocked_source!r}).run()
+        blocked.date_input(key='ledger_business_date').set_value(date(2026,10,16))
+        blocked.run()
         assert not blocked.exception, [e.message for e in blocked.exception]
         assert next(b for b in blocked.button if b.label == '이 원장을 대조 분석에 사용').disabled
         assert any('전체 1행' in w.value and '내 초안 0행' in w.value for w in blocked.warning)
