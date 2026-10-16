@@ -15,7 +15,7 @@ jobs:
       matrix:
         include:
           - python: "3.11"
-            streamlit: "streamlit==1.56.0"
+            streamlit: "streamlit==1.66.0"
           - python: "3.12"
             streamlit: "streamlit"
           - python: "3.13"

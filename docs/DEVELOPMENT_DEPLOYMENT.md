@@ -3,7 +3,7 @@
 ## 분리 원칙
 
 - 새 저장소: `vslineclinic/clinic-pay-1`.
-- 새 Streamlit 앱: 이 저장소의 검증된 브랜치, **`development.py`**로 배포. 권장 Python 3.13.
+- 새 Streamlit 앱: 이 저장소의 검증된 브랜치, **`development.py`**로 배포. 권장 Python 3.13, Streamlit 1.66 이상.
 - 기존 `vslineclinic/clinic-pay`와 기존 Streamlit 주소는 수정·재배포하지 않는다.
 - 기존 계정의 총괄 역할 `admin/all`만 새 앱에 로그인할 수 있다. 지출앱의 메뉴도 총괄만 보인다.
 - 지출앱과 정산앱은 현재 별도 로그인이다. 메뉴 연결이 SSO를 의미하지 않는다.
