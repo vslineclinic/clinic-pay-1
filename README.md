@@ -4,6 +4,11 @@
 기존 운영 저장소 `vslineclinic/clinic-pay`와 운영 Streamlit 앱은 그대로 유지합니다.
 현재 개발 앱은 총괄관리자(`admin/all`)만 접근합니다. 직원 공개는 안정화 뒤 별도 진행합니다.
 
+개발 주소: **https://vsline-clinic-pay-1.streamlit.app/**
+
+2026-10-16: 새 주소의 로그인 화면과 GitHub CI 전체 통과를 확인했습니다.
+계정 인증 Secrets·전용 PostgreSQL·독립 자동 백업 연결은 남아 있으므로 실사용 준비 완료 상태는 아닙니다.
+
 ```bash
 pip install -r requirements-dev.txt
 streamlit run development.py
