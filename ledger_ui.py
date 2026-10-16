@@ -179,7 +179,7 @@ def _selection(day):
 
 
 def render_ledger(principal, store, validate, on_analyze=None):
-    """Render admin ledger; return the latest selection, with explicit analysis callback."""
+    """Render admin ledger; build an analysis selection only on explicit request."""
     import streamlit as st
     principal = validate(principal)
     if principal.role != 'admin' or principal.branch != 'all':
@@ -193,16 +193,28 @@ def render_ledger(principal, store, validate, on_analyze=None):
     identity = component_scope(f'{principal.username}:{principal.revision}', '', '')
     scope = component_scope(f'{principal.username}:{principal.revision}', branch, business_date)
     st.session_state.setdefault(f'_ledger_scopes_{identity}', {})[scope] = (branch, business_date)
-    selection_key = f'_ledger_view_{scope}'
     ack_key = f'_ledger_ack_{scope}'
     processed_key = f'_ledger_processed_{scope}'
 
-    @st.fragment(run_every='2s')
+    @st.fragment(run_every='5s')
     def live_editor():
+        current = principal
+        workspace_key = f'_ledger_workspace_{scope}'
+        action = st.session_state.get(f'ledger_editor_{identity}')
+        if isinstance(action, dict) and action.get('kind') != 'checkpoint' and action.get('scope') == scope:
+            # Deliver the ACK in this render, without rerunning the whole authenticated app.
+            fingerprint = json.dumps({key: value for key, value in action.items() if key != 'checkpoint'}, sort_keys=True, ensure_ascii=False)
+            processed = st.session_state.setdefault(processed_key, {})
+            if fingerprint not in processed:
+                ack = dispatch_action(store, current, branch, business_date, action, scope)
+                processed[fingerprint] = ack
+                if len(processed) > 100:
+                    processed.pop(next(iter(processed)))
+                st.session_state[ack_key] = ack
+                # A failed refresh must not later pair the ACK with a pre-save workspace.
+                st.session_state.pop(workspace_key, None)
         try:
-            current = principal
             checkpoint_event = st.session_state.pop(f'_ledger_checkpoint_event_{identity}', False)
-            workspace_key = f'_ledger_workspace_{scope}'
             if checkpoint_event and workspace_key in st.session_state:
                 workspace = st.session_state[workspace_key]
             else:
@@ -218,26 +230,14 @@ def render_ledger(principal, store, validate, on_analyze=None):
         except Exception:
             st.error('원장을 불러오지 못했습니다. 서버 연결을 확인하고 다시 시도하세요.')
             return
-        st.session_state[selection_key] = _selection(day)
         state_label = '마감' if day['state'] == 'closed' else '입력 가능'
-        st.caption(f"{branch} · {business_date} · 일자 개정 {day['revision']} · {state_label} · 약 2초 간격 새로고침")
+        st.caption(f"{branch} · {business_date} · 일자 개정 {day['revision']} · {state_label} · 다른 작업자의 변경은 약 5초 간격으로 확인")
         pending_count = day.get('pending_draft_count', len(drafts))
         if pending_count:
             st.warning(f'미완료 초안 전체 {pending_count}행 · 내 초안 {len(drafts)}행. 미완료 초안이 있으면 대조 분석과 마감을 시작할 수 없습니다.')
         refund_options = _render_refund_picker(current, store, branch, business_date, scope, day['state'] == 'closed')
-        action = ledger_editor(identity=identity, scope=scope, rows=editor_rows(day, drafts), channels=PAY_CHANNELS,
-                               ack=st.session_state.get(ack_key), closed=day['state'] == 'closed', refund_options=refund_options)
-        if isinstance(action, dict) and action.get('kind') != 'checkpoint' and action.get('scope') == scope:
-            # Cache exact deliveries only; storage handles durable request idempotency.
-            fingerprint = json.dumps({key: value for key, value in action.items() if key != 'checkpoint'}, sort_keys=True, ensure_ascii=False)
-            processed = st.session_state.setdefault(processed_key, {})
-            if fingerprint not in processed:
-                ack = dispatch_action(store, current, branch, business_date, action, scope)
-                processed[fingerprint] = ack
-                if len(processed) > 100:
-                    processed.pop(next(iter(processed)))
-                st.session_state[ack_key] = ack
-                st.rerun()
+        ledger_editor(identity=identity, scope=scope, rows=editor_rows(day, drafts), channels=PAY_CHANNELS,
+                      ack=st.session_state.get(ack_key), closed=day['state'] == 'closed', refund_options=refund_options)
         local_pending = checkpoint_pending(st.session_state.get(f'_ledger_client_{identity}'))
         if local_pending:
             st.warning('이 세션에 서버 저장을 확인하지 못한 입력이 있습니다. 날짜·지점을 바꾸어도 보관되며, 돌아오면 입력과 재시도를 복구합니다. 분석·마감 전 모든 대기·실패·충돌을 해결하세요.')
@@ -278,7 +278,6 @@ def render_ledger(principal, store, validate, on_analyze=None):
     live_editor()
     _render_history(principal, store, branch, business_date, scope)
     _render_backup(principal, store, scope)
-    return st.session_state.get(selection_key)
 
 
 def _render_draft_cleanup(principal, store, branch, business_date, scope, local_pending):

@@ -251,3 +251,70 @@ def test_local_checkpoint_blocks_close_and_analysis_before_debounce():
     assert checkpoint_pending(checkpoint)
     assert not checkpoint_pending({'models': {'scope': {'rows': [{'dirty': False, 'status': 'saved'}], 'active': None}}})
     assert checkpoint_pending({'models': {'scope': {'rows': [{'status': 'error'}], 'active': None}}})
+
+
+def test_autosave_ack_arrives_without_extra_app_run_or_eager_analysis(tmp_path):
+    import subprocess
+    import sys
+    import textwrap
+    source = textwrap.dedent(f'''
+        import streamlit as st
+        from branch_access import Principal
+        from receipt_ledger import LedgerStore
+        from ledger_ui import render_ledger
+        st.session_state['full_runs'] = st.session_state.get('full_runs', 0) + 1
+        p = Principal('synthetic', 'admin', 'all', '11111111-1111-4111-8111-111111111111')
+        s = LedgerStore({str(tmp_path / 'autosave.sqlite')!r}, lambda p:p, local=True)
+        render_ledger(p, s, lambda p:p)
+    ''')
+    driver = textwrap.dedent(f'''
+        import json
+        from uuid import uuid4
+        from streamlit.testing.v1 import AppTest
+        import ledger_ui
+        conversions = []
+        original = ledger_ui._selection
+        def selection(day):
+            conversions.append(day['revision'])
+            return original(day)
+        ledger_ui._selection = selection
+        at = AppTest.from_string({source!r}).run()
+        assert not at.exception
+        component = at.get('component_instance')[0].proto
+        args = json.loads(component.json_args)
+        receipt_id = str(uuid4())
+        command = {{'scope':args['scope'], 'id':receipt_id, 'request_id':str(uuid4()),
+                    'action':'save', 'receipt_revision':0, 'draft_revision':0,
+                    'raw':{{'chart_no':'TEST-LATENCY', 'patient_name':'합성시험', 'payments':{{'카드':'1000'}}}}}}
+        def deliver(value):
+            states = at._tree.get_widget_states()
+            item = states.widgets.add()
+            item.id = component.id
+            item.json_value = json.dumps(value)
+            at._run(states)
+            assert not at.exception, [e.message for e in at.exception]
+            return json.loads(at.get('component_instance')[0].proto.json_args)
+        before = at.session_state['full_runs']
+        saved = deliver(command)
+        assert at.session_state['full_runs'] == before + 1, 'autosave must not request another full-app run'
+        assert saved['ack']['status'] == 'saved'
+        assert saved['ack']['receipt_revision'] == 1
+        assert saved['rows'][0]['raw']['payments']['카드'] == '1000'
+        assert not conversions, 'editing and polling must not build analysis DataFrames'
+        replay = deliver(command)
+        assert replay['ack'] == saved['ack']
+        assert replay['rows'][0]['receipt_revision'] == 1, 'replayed delivery must not duplicate a write'
+        command.update(request_id=str(uuid4()), receipt_revision=1)
+        command['raw']['payments']['카드'] = '1200'
+        updated = deliver(command)
+        assert updated['ack']['receipt_revision'] == 2
+        assert updated['rows'][0]['raw']['payments']['카드'] == '1200'
+        next(b for b in at.button if b.label == '이 원장을 대조 분석에 사용').click()
+        at.run()
+        assert not at.exception
+        assert at.session_state['_ledger_selection']['daily'].iloc[0]['총액'] == 1200
+        assert conversions == [2], 'only explicit analysis should build its selection'
+        print('Autosave ACK, replay, fresh revision and lazy analysis passed')
+    ''')
+    result = subprocess.run([sys.executable, '-c', driver], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
