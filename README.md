@@ -6,8 +6,9 @@
 
 개발 주소: **https://vsline-clinic-pay-1.streamlit.app/**
 
-2026-10-16: 새 주소의 로그인 화면과 GitHub CI 전체 통과를 확인했습니다.
-계정 인증 Secrets·전용 PostgreSQL·독립 자동 백업 연결은 남아 있으므로 실사용 준비 완료 상태는 아닙니다.
+2026-10-16: 실제 총괄 로그인과 전용 Neon PostgreSQL 연결을 완료했습니다.
+합성 수납으로 자동저장·금액 수정·사용 체크·날짜 이동 후 보존·취소 이력과 백업 파일의 새 로컬 DB 복원을 확인했습니다.
+독립 자동 백업, 실제 다중 브라우저·장애·부하 검증이 남아 있으므로 직원 실사용 준비 완료 상태는 아닙니다.
 
 ```bash
 pip install -r requirements-dev.txt
