@@ -39,6 +39,9 @@ CI run 38839696277의 Python 3.11/3.12/3.13 및 PostgreSQL 테스트 586개/화�
 
 ### 전체 화면 B · 2026-10-17
 
+- 컬럼 제목은 수납·환불·기간 기록·일일 마감에서 `web_static/styles.css`의 남색/굵기 650 규칙을 공유한다.
+- 갱신 함정: 인증 모듈 교체 후 남아 있는 개발 검사 모듈의 import-time `Principal`은 새 로그인 객체를 거부할 수 있다. `staging.require_preview`는 호출 시 최신 인증 타입을 import하며 기존 타입·총괄 역할 검사를 유지한다. 현재 계정 시트의 권한이 올바른 경우 이름 기반 승격으로 우회하지 않는다.
+
 - `development.py`의 `?ledger_view=full-web`은 예시 전체 레이아웃을 사용하는 `web_bridge.main()`으로 진입한다. 기본 A와 위의 이전 간단 목록 B는 유지한다. `ledger_ui.render_ledger`에 새 탭 비교 링크가 있다.
 - `web_static/`은 사이드바·날짜/지점 선택·수납/환불 표·자동저장 등록창이다. 입력은 브라우저 메모리에서 처리하고 1.2초 debounce/최대 5초(IME 제외)로 저장한다. 키 입력 체크포인트를 보내지 않으며 조회/저장 요청만 안정된 iframe을 통해 Streamlit에 보낸다. 저장 요청 때의 Streamlit·인증·DB 지연까지 제거한 구조는 아니다.
 - `web_bridge.main`의 CSS는 전체 B iframe을 포함한 stale 래퍼의 opacity만 보정한다. Streamlit의 요청 중 화면 전체 흐림을 방지하며 서버 저장 완료 여부는 B 자체 상태로 표시한다. 권한이나 pointer-events는 우회하지 않는다.

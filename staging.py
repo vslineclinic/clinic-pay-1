@@ -2,11 +2,14 @@
 from pathlib import Path
 from functools import lru_cache
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
-from branch_access import AccessError, Principal, assert_branch
+from branch_access import AccessError, assert_branch
 from reconciliation_history import HistoryError
 
 
 def require_preview(principal):
+    # Streamlit may reload authentication while this module remains cached.
+    from branch_access import AccessError, Principal
+
     if not isinstance(principal, Principal) or not principal.is_admin:
         raise AccessError("개발 중인 정산 앱은 총괄관리자만 이용할 수 있습니다.")
     return principal
