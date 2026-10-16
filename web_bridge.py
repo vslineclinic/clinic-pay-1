@@ -189,6 +189,8 @@ def main():
         [data-testid="stMain"] {overflow:hidden}
         [data-testid="stVerticalBlock"] {gap:0!important}
         iframe.stCustomComponentV1 {width:100%;height:100dvh!important;display:block;border:0}
+        [data-testid="stElementContainer"][data-stale="true"]:has(iframe[title$="clinic_full_web_ledger"])
+        {opacity:1!important;transition:none!important}
         </style>''', unsafe_allow_html=True)
         render_full_web(principal, store, app._validated_ledger_principal)
     except AccessError as error:

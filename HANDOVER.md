@@ -41,6 +41,7 @@ CI run 38839696277의 Python 3.11/3.12/3.13 및 PostgreSQL 테스트 586개/화�
 
 - `development.py`의 `?ledger_view=full-web`은 예시 전체 레이아웃을 사용하는 `web_bridge.main()`으로 진입한다. 기본 A와 위의 이전 간단 목록 B는 유지한다. `ledger_ui.render_ledger`에 새 탭 비교 링크가 있다.
 - `web_static/`은 사이드바·날짜/지점 선택·수납/환불 표·자동저장 등록창이다. 입력은 브라우저 메모리에서 처리하고 1.2초 debounce/최대 5초(IME 제외)로 저장한다. 키 입력 체크포인트를 보내지 않으며 조회/저장 요청만 안정된 iframe을 통해 Streamlit에 보낸다. 저장 요청 때의 Streamlit·인증·DB 지연까지 제거한 구조는 아니다.
+- `web_bridge.main`의 CSS는 전체 B iframe을 포함한 stale 래퍼의 opacity만 보정한다. Streamlit의 요청 중 화면 전체 흐림을 방지하며 서버 저장 완료 여부는 B 자체 상태로 표시한다. 권한이나 pointer-events는 우회하지 않는다.
 - `core.js`가 날짜별 전송 큐·불변 재시도·서버 ACK·저장 상태를 담당한다. `bridge-api.js`는 기존 Streamlit 인증 세션, `api.js`는 선택형 독립 HTTP 서버, `demo-api.js`는 `preview.html`의 가상 메모리 자료 전용이다. 실제 연결 실패를 데모로 대체하지 않는다.
 - 기존 DB 원장과 14개 결제수단·개정 충돌·이력·마감·백업을 재사용한다. 총괄 전용이며 현재 계정 권한을 요청마다 검사한다. 대조·AI는 기존 검증 엔진 화면으로 연결한다. 환자 입력을 localStorage에 저장하지 않는다. 브라우저 종료 전에 보내지 못한 값은 영구 보존을 보장하지 않는다.
 - 취소된 거래에 남은 본인 초안도 정리할 수 있게 표시한다. 충돌 복구는 서버를 새로 읽어 로컬 충돌 상태만 교체하며 자동 덮어쓰기를 하지 않는다. 스냅샷 다운로드는 화면용 문자열 금액과 분리한 원본 `download_json`으로 체크섬을 보존한다.
