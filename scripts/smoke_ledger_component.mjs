@@ -90,3 +90,4 @@ cancellation.edit('a','patient_name','취소 응답 전 입력');
 cancellation.ack({id:'a',request_id:vc.request_id,status:'saved',receipt_revision:2,draft_revision:0,voided:true});
 assert.equal(cancellation.next(),null,'void ACK cannot trigger a new save on the voided receipt');
 console.log('Ledger void ACK supersedes queued edits passed');
+await import('./smoke_ledger_transport.mjs');

@@ -22,7 +22,7 @@
   }
   function schedule(immediate=false) {
     clearTimeout(timer);
-    timer=setTimeout(emit,immediate?0:400);
+    timer=setTimeout(()=>{timer=null;emit();},immediate?0:1000);
   }
   function cell(row,field,label,{payment=false,checkbox=false,css='',options=null}={}) {
     const td=document.createElement('td'),input=document.createElement(options?'select':'input');
@@ -43,7 +43,9 @@
     input.addEventListener(checkbox||options?'change':'input',change);
     input.addEventListener('compositionstart',()=>model.composing.add(row.id));
     input.addEventListener('compositionend',()=>{model.composing.delete(row.id);change();});
-    input.addEventListener('blur',()=>{if(!model.composing.has(row.id))schedule(true);});
+    input.addEventListener('blur',event=>{
+      if(event.relatedTarget?.closest?.('tr')!==nodes.get(row.id)&&!model.composing.has(row.id))schedule(true);
+    });
     input.addEventListener('keydown',event=>{
       if(event.key==='Enter'&&!event.isComposing&&!model.composing.has(row.id)) {
         event.preventDefault();schedule(true);
@@ -133,7 +135,7 @@
     if(!model.rows.size&&!args.closed)model.add(empty());
     const head=document.createElement('tr');
     for(const label of ['저장 상태','차트번호','성명',...args.channels,'여신 사용','강언 사용','합계','구분','환불 원거래','메모','관리']){const th=document.createElement('th');th.textContent=label;head.append(th);}
-    $('header').replaceChildren(head);render();if(acknowledging)checkpoint();schedule();
+    $('header').replaceChildren(head);render();if(acknowledging)checkpoint();if(timer===null)schedule();
   });
   window.addEventListener('beforeunload',event=>{if(registry?.pending()){event.preventDefault();event.returnValue='';}});
   $('add').onclick=add;
