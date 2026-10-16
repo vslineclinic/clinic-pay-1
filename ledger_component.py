@@ -36,7 +36,8 @@ def checkpoint_pending(checkpoint):
                for snapshot in (checkpoint or {}).get('models', {}).values())
 
 
-def ledger_editor(*, identity, scope, rows, channels, ack=None, closed=False, refund_options=None):
+def ledger_editor(*, identity, scope, rows, channels, ack=None, closed=False, refund_options=None,
+                  totals=None, context=None, initial_layout='table'):
     import streamlit as st
     import streamlit.components.v1 as components
     widget_key = f'ledger_editor_{identity}'
@@ -53,4 +54,5 @@ def ledger_editor(*, identity, scope, rows, channels, ack=None, closed=False, re
     component = components.declare_component('clinic_receipt_ledger', path=str(Path(__file__).parent / 'assets' / 'ledger_editor'))
     return component(identity=identity, scope=scope, rows=rows, channels=list(channels), ack=ack,
                      checkpoint=st.session_state.get(checkpoint_key), closed=closed,
-                     refund_options=refund_options or [], key=widget_key, default=None, on_change=remember_input)
+                     refund_options=refund_options or [], totals=totals, context=context,
+                     initial_layout=initial_layout, key=widget_key, default=None, on_change=remember_input)

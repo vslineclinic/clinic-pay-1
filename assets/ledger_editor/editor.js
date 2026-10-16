@@ -1,6 +1,6 @@
 /* Streamlit v1 postMessage transport. All data goes to the authenticated Python session. */
 (() => {
-  let model=null,registry=null,args={},timer=null,lastSentAt=0,lastRequest=null;
+  let model=null,registry=null,args={},timer=null,lastSentAt=0,lastRequest=null,layout=null,web=null;
   const nodes=new Map(), $=id=>document.getElementById(id);
   const send=(type,data={})=>window.parent.postMessage({isStreamlitMessage:true,type,...data},'*');
   const resize=()=>send('streamlit:setFrameHeight',{height:Math.min(760,document.body.scrollHeight+8)});
@@ -24,8 +24,8 @@
     clearTimeout(timer);
     timer=setTimeout(()=>{timer=null;emit();},immediate?0:1000);
   }
-  function cell(row,field,label,{payment=false,checkbox=false,css='',options=null}={}) {
-    const td=document.createElement('td'),input=document.createElement(options?'select':'input');
+  function fieldInput(row,field,label,{payment=false,checkbox=false,css='',options=null}={}) {
+    const input=document.createElement(options?'select':'input');
     if (!options) input.type=checkbox?'checkbox':'text';
     if (payment) {input.inputMode='numeric';input.className='money';}
     if (css) input.classList.add(css);
@@ -38,26 +38,32 @@
         const original=model.rows.get(input.value)?.raw||(args.refund_options||[]).find(value=>value.id===input.value);
         if(original){row.raw.chart_no=original.chart_no;row.raw.patient_name=original.patient_name;}
       }
-      checkpoint();schedule();if(['kind','refund_of'].includes(field))render();else renderStatus(row.id);
+      checkpoint();schedule();if(layout==='web'||['kind','refund_of'].includes(field))render();else renderStatus(row.id);
     };
     input.addEventListener(checkbox||options?'change':'input',change);
     input.addEventListener('compositionstart',()=>model.composing.add(row.id));
     input.addEventListener('compositionend',()=>{model.composing.delete(row.id);change();});
     input.addEventListener('blur',event=>{
-      if(event.relatedTarget?.closest?.('tr')!==nodes.get(row.id)&&!model.composing.has(row.id))schedule(true);
+      const next=rowRoot(event.relatedTarget);
+      if(!event.relatedTarget?.closest?.('.web-local-control')&&next?.dataset.id!==row.id&&!model.composing.has(row.id))schedule(true);
     });
     input.addEventListener('keydown',event=>{
       if(event.key==='Enter'&&!event.isComposing&&!model.composing.has(row.id)) {
         event.preventDefault();schedule(true);
-        const all=[...nodes.get(row.id).querySelectorAll('input,select')],index=all.indexOf(input);
+        const all=[...rowRoot(input).querySelectorAll('input,select')].filter(item=>!item.disabled),index=all.indexOf(input);
         if(index<all.length-1)all[index+1].focus();else add();
       }
     });
-    td.append(input);return td;
+    return input;
   }
+  function cell(row,field,label,options) {
+    const td=document.createElement('td');td.append(fieldInput(row,field,label,options));return td;
+  }
+  const rowRoot=node=>node?.closest?.('[data-id]')||node?.closest?.('tr');
   function add() {
     if(args.closed)return;
-    const id=model.add(empty());render();nodes.get(id).querySelector('input').focus();resize();
+    const id=model.add(empty());if(layout==='web')web.select(id);render();
+    (layout==='web'?$('web-detail'):nodes.get(id))?.querySelector('input')?.focus();resize();
   }
   function build(row) {
     const tr=document.createElement('tr');tr.dataset.id=row.id;
@@ -69,7 +75,10 @@
     tr.append(cell(row,'kind','거래 구분',{options:[['receipt','수납'],['refund','환불']]}));
     tr.append(cell(row,'refund_of','환불 원거래',{options:[['','원거래 선택']],css:'refund'}));
     tr.append(cell(row,'note','메모',{css:'note'}));
-    const action=document.createElement('td'),wrap=document.createElement('div');wrap.className='actions';
+    const action=document.createElement('td');action.append(actions(row));tr.append(action);nodes.set(row.id,tr);return tr;
+  }
+  function actions(row) {
+    const wrap=document.createElement('div');wrap.className='actions';
     const discard=document.createElement('button');discard.type='button';discard.textContent='초안 버리기';
     discard.onclick=()=>{if(confirm('내 초안을 버립니까? 이미 저장된 수납은 유지합니다.')){model.discard(row.id);checkpoint();schedule(true);render();}};
     const voidButton=document.createElement('button');voidButton.type='button';voidButton.textContent='수납 취소';
@@ -77,12 +86,15 @@
       const reason=prompt('수납 취소 사유를 입력하세요. 환불은 연결된 환불 행으로 입력합니다.');
       if(reason?.trim()){row.raw._void_reason=reason.trim();row.action='void';row.dirty=true;checkpoint();schedule(true);}
     };
-    wrap.append(discard,voidButton);action.append(wrap);tr.append(action);nodes.set(row.id,tr);return tr;
+    wrap.append(discard,voidButton);return wrap;
   }
   function renderStatus(id) {
     const row=model.rows.get(id),tr=nodes.get(id);if(!row||!tr)return;
     tr.className=row.voided?'voided':row.status;
-    const td=tr.querySelector('.state');td.replaceChildren();
+    fillStatus(row,tr.querySelector('.state'));
+  }
+  function fillStatus(row,td) {
+    const id=row.id;td.replaceChildren();
     const status=document.createElement('span');status.className=`status ${row.status}`;status.textContent=statusNames[row.status]||row.status;td.append(status);
     if(row.updated_by){const actor=document.createElement('small');actor.textContent=`${row.updated_by} · 개정 ${row.receipt_revision}`;td.append(actor);}
     if(row.message){const note=document.createElement('div');note.className='notice';note.textContent=row.message;td.append(note);}
@@ -96,41 +108,60 @@
     }
     if(row.failed){const retry=document.createElement('button');retry.type='button';retry.textContent='다시 시도';retry.onclick=()=>{model.retry(id);checkpoint();lastRequest=null;schedule(true);};td.append(retry);}
   }
+  function updateInput(row,input) {
+    const field=input.dataset.field,payment=args.channels.includes(field);
+    if(field==='refund_of'){
+      const choices=[['','원거래 선택'],...(args.refund_options||[]).map(r=>[r.id,r.label]),...[...model.rows.values()].filter(r=>r.id!==row.id&&r.receipt_revision&&r.raw.kind!=='refund'&&!r.voided).map(r=>[r.id,`${r.raw.chart_no} ${r.raw.patient_name}`])];
+      if(row.raw.refund_of&&!choices.some(([id])=>id===row.raw.refund_of))choices.push([row.raw.refund_of,`원거래 ${row.raw.refund_of}`]);
+      if(document.activeElement!==input){input.replaceChildren();for(const [value,label]of choices){const option=document.createElement('option');option.value=value;option.textContent=label;input.append(option);}}
+    }
+    const value=payment?row.raw.payments[field]??'':row.raw[field]??'';
+    if(document.activeElement!==input){if(input.type==='checkbox')input.checked=!!value;else input.value=value;}
+    input.disabled=!!args.closed||!!row.voided||(model.active?.id===row.id&&model.active.action==='void')||(row.raw.kind==='refund'&&['chart_no','patient_name'].includes(field));
+    if(field==='refund_of')input.disabled ||= row.raw.kind!=='refund';
+  }
+  function totalText(row) {
+    const amounts=Object.values(row.raw.payments),valid=amounts.every(v=>v===''||typeof v==='number'&&Number.isSafeInteger(v)||typeof v==='string'&&/^(\d+|\d{1,3}(,\d{3})+)$/.test(v));
+    return valid?`${amounts.reduce((s,v)=>s+BigInt(String(v).replaceAll(',','')||'0'),0n).toLocaleString()}원`:'금액 확인';
+  }
+  function updateActions(row,wrap) {
+    const buttons=wrap.children;buttons[0].hidden=!row.draft_revision&&!row.local;
+    buttons[1].hidden=!row.receipt_revision||row.voided;for(const button of buttons)button.disabled=!!args.closed||!!row.failed||!!row.conflict||row.status==='saving';
+  }
+  function setLayout(value) {
+    if(layout===value||model?.composing.size)return;
+    layout=value;nodes.clear();$('rows').replaceChildren();web?.reset(false);render();
+  }
   function render() {
     if(!model)return;
-    const existing=new Set(model.rows.keys());for(const [id,node] of nodes){if(!existing.has(id)){node.remove();nodes.delete(id);}}
-    for(const row of model.rows.values()){
-      let tr=nodes.get(row.id);if(!tr){tr=build(row);$('rows').append(tr);}
-      for(const input of tr.querySelectorAll('input,select')) {
-        const field=input.dataset.field,payment=args.channels.includes(field);
-        if(field==='refund_of'){
-          const choices=[['','원거래 선택'],...(args.refund_options||[]).map(r=>[r.id,r.label]),...[...model.rows.values()].filter(r=>r.id!==row.id&&r.receipt_revision&&r.raw.kind!=='refund'&&!r.voided).map(r=>[r.id,`${r.raw.chart_no} ${r.raw.patient_name}`])];
-          if(row.raw.refund_of&&!choices.some(([id])=>id===row.raw.refund_of))choices.push([row.raw.refund_of,`원거래 ${row.raw.refund_of}`]);
-          if(document.activeElement!==input){input.replaceChildren();for(const [value,label]of choices){const option=document.createElement('option');option.value=value;option.textContent=label;input.append(option);}}
-        }
-        const value=payment?row.raw.payments[field]??'':row.raw[field]??'';
-        if(document.activeElement!==input){if(input.type==='checkbox')input.checked=!!value;else input.value=value;}
-        input.disabled=!!args.closed||!!row.voided||(model.active?.id===row.id&&model.active.action==='void')||(row.raw.kind==='refund'&&['chart_no','patient_name'].includes(field));
-        if(field==='refund_of')input.disabled ||= row.raw.kind!=='refund';
+    if($('legacy-view'))$('legacy-view').hidden=layout==='web';
+    if($('web-view'))$('web-view').hidden=layout!=='web';
+    for(const value of ['table','web'])$('layout-'+value)?.setAttribute('aria-pressed',String(layout===value));
+    if(layout==='web')web.render(model,args);
+    else {
+      const existing=new Set(model.rows.keys());for(const [id,node] of nodes){if(!existing.has(id)){node.remove();nodes.delete(id);}}
+      for(const row of model.rows.values()){
+        let tr=nodes.get(row.id);if(!tr){tr=build(row);$('rows').append(tr);}
+        for(const input of tr.querySelectorAll('input,select'))updateInput(row,input);
+        tr.querySelector('.total').textContent=totalText(row);updateActions(row,tr.querySelector('.actions'));renderStatus(row.id);
       }
-      const amounts=Object.values(row.raw.payments),valid=amounts.every(v=>v===''||typeof v==='number'&&Number.isSafeInteger(v)||typeof v==='string'&&/^(\d+|\d{1,3}(,\d{3})+)$/.test(v));
-      tr.querySelector('.total').textContent=valid?`${amounts.reduce((s,v)=>s+BigInt(String(v).replaceAll(',','')||'0'),0n).toLocaleString()}원`:'금액 확인';
-      const buttons=tr.querySelector('.actions').children;buttons[0].hidden=!row.draft_revision&&!row.local;
-      buttons[1].hidden=!row.receipt_revision||row.voided;for(const button of buttons)button.disabled=!!args.closed||!!row.failed||!!row.conflict||row.status==='saving';
-      renderStatus(row.id);
     }
     $('add').disabled=!!args.closed;$('closed').hidden=!args.closed;
     const pending=[...model.rows.values()].filter(row=>row.dirty||row.status==='saving').length;
-    $('summary').textContent=pending?`저장 대기 ${pending}행`:registry.pending()?'다른 날짜·지점에 저장 대기 있음':'서버 저장 상태 표시';resize();
+    const review=[...model.rows.values()].filter(row=>row.conflict||row.failed||row.status==='draft').length;
+    const notices=[pending?`저장 대기 ${pending}행`:'',review?`검토 필요 ${review}행 · 내 입력 보존`:''].filter(Boolean);
+    $('summary').textContent=notices.join(' · ')||(registry.pending()?'다른 날짜·지점에 저장 대기 있음':'서버 저장 상태 표시');resize();
   }
   window.addEventListener('message',event=>{
     if(event.data?.type!=='streamlit:render')return;
     args=event.data.args;
     if(!registry)registry=new LedgerEditor.EditorRegistry(undefined,args.checkpoint);
-    if(!model||model.scope!==args.scope){model=registry.select(args.scope);nodes.clear();$('rows').replaceChildren();lastRequest=null;}
+    if(!web&&window.LedgerWeb&&$('web-view'))web=window.LedgerWeb.create($('web-view'),{fieldInput,updateInput,fillStatus,actions,updateActions,totalText,statusNames,render,resize});
+    if(!layout)layout=web&&args.initial_layout==='web'?'web':'table';
+    if(!model||model.scope!==args.scope){model=registry.select(args.scope);nodes.clear();$('rows').replaceChildren();web?.reset();lastRequest=null;}
     const acknowledging=args.ack&&model.active&&args.ack.request_id===model.active.request_id&&(args.ack.attempt||0)===(model.active.attempt||0);
     if(args.ack)model.ack(args.ack);
-    const focused=document.activeElement?.closest('tr')?.dataset.id;
+    const focused=rowRoot(document.activeElement)?.dataset.id;
     model.sync(args.rows,new Set(focused?[focused]:[]));
     if(!model.rows.size&&!args.closed)model.add(empty());
     const head=document.createElement('tr');
@@ -139,6 +170,8 @@
   });
   window.addEventListener('beforeunload',event=>{if(registry?.pending()){event.preventDefault();event.returnValue='';}});
   $('add').onclick=add;
+  if($('layout-table'))$('layout-table').onclick=()=>setLayout('table');
+  if($('layout-web'))$('layout-web').onclick=()=>setLayout('web');
   setInterval(()=>{if(model?.active)emit();},1000);
   send('streamlit:componentReady',{apiVersion:1});resize();
 })();

@@ -85,6 +85,23 @@ def editor_rows(day, drafts):
     return list(rows.values())
 
 
+def editor_summary(day):
+    """Summarize durable receipts only; decimal strings survive the JS money boundary."""
+    gross = refund = receipt_count = refund_count = 0
+    for receipt in day['receipts']:
+        if receipt.get('voided'):
+            continue
+        amount = sum(receipt['payments'].values())
+        if receipt.get('kind', 'receipt') == 'refund':
+            refund += amount
+            refund_count += 1
+        else:
+            gross += amount
+            receipt_count += 1
+    return {'gross': str(gross), 'refund': str(refund), 'net': str(gross - refund),
+            'receipt_count': receipt_count, 'refund_count': refund_count}
+
+
 def ledger_to_daily(day):
     """Return (daily, refunds), positive refund amounts, matching app.parse_daily columns.
 
@@ -186,6 +203,7 @@ def render_ledger(principal, store, validate, on_analyze=None):
         raise AccessError('총괄 관리자만 개발 원장에 접근할 수 있습니다.')
     st.subheader('수납 원장 · 개발본')
     st.caption('서버 저장 응답을 확인한 행만 저장완료로 표시합니다. 공동 접속자의 인원·상태는 추정해 표시하지 않습니다.')
+    st.caption('원장 안에서 A · 표형과 B · 웹형을 비교할 수 있습니다. 같은 원장과 수정 이력을 사용합니다.')
     left, right = st.columns(2)
     branch = left.selectbox('원장 지점', CANONICAL_BRANCHES, key='ledger_branch')
     picked_date = right.date_input('KST 영업일', value=kst_today(), key='ledger_business_date')
@@ -237,7 +255,9 @@ def render_ledger(principal, store, validate, on_analyze=None):
             st.warning(f'미완료 초안 전체 {pending_count}행 · 내 초안 {len(drafts)}행. 미완료 초안이 있으면 대조 분석과 마감을 시작할 수 없습니다.')
         refund_options = _render_refund_picker(current, store, branch, business_date, scope, day['state'] == 'closed')
         ledger_editor(identity=identity, scope=scope, rows=editor_rows(day, drafts), channels=PAY_CHANNELS,
-                      ack=st.session_state.get(ack_key), closed=day['state'] == 'closed', refund_options=refund_options)
+                      ack=st.session_state.get(ack_key), closed=day['state'] == 'closed', refund_options=refund_options,
+                      totals=editor_summary(day), context={'branch': branch, 'business_date': business_date},
+                      initial_layout='web' if st.query_params.get('ledger_view') == 'web' else 'table')
         local_pending = checkpoint_pending(st.session_state.get(f'_ledger_client_{identity}'))
         if local_pending:
             st.warning('이 세션에 서버 저장을 확인하지 못한 입력이 있습니다. 날짜·지점을 바꾸어도 보관되며, 돌아오면 입력과 재시도를 복구합니다. 분석·마감 전 모든 대기·실패·충돌을 해결하세요.')

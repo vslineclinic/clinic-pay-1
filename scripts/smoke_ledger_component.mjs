@@ -91,3 +91,4 @@ cancellation.ack({id:'a',request_id:vc.request_id,status:'saved',receipt_revisio
 assert.equal(cancellation.next(),null,'void ACK cannot trigger a new save on the voided receipt');
 console.log('Ledger void ACK supersedes queued edits passed');
 await import('./smoke_ledger_transport.mjs');
+await import('./smoke_ledger_web.mjs');
