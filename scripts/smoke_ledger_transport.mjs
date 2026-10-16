@@ -1,55 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { runInNewContext } from 'node:vm';
-
-// Exercise the real event handlers and transport with a deterministic browser clock.
-function browser() {
-  let now=0, sequence=0;
-  const timers=new Map(), messages=[], listeners=new Map();
-  const document={activeElement:null,body:{scrollHeight:100}};
-  class Element {
-    constructor(tag) {this.tag=tag;this.children=[];this.dataset={};this.listeners=new Map();this.className='';this.value='';this.classList={add:value=>{this.className+=` ${value}`;}};}
-    append(...children) {for(const child of children){child.parent=this;this.children.push(child);}}
-    replaceChildren(...children) {this.children=[];this.append(...children);}
-    remove() {this.parent.children=this.parent.children.filter(child=>child!==this);}
-    setAttribute(name,value) {this[name]=value;}
-    addEventListener(type,callback) {this.listeners.set(type,callback);}
-    matches(selector) {return selector.startsWith('.')?this.className.split(' ').includes(selector.slice(1)):this.tag===selector;}
-    closest(selector) {return this.matches(selector)?this:this.parent?.closest(selector);}
-    querySelectorAll(selector) {return this.children.flatMap(child=>[...(selector.split(',').some(part=>child.matches(part))?[child]:[]),...child.querySelectorAll(selector)]);}
-    querySelector(selector) {return this.querySelectorAll(selector)[0];}
-    focus() {const previous=document.activeElement;document.activeElement=this;previous?.listeners.get('blur')?.({relatedTarget:this});}
-  }
-  const elements=Object.fromEntries(['rows','header','summary','add','closed'].map(id=>[id,new Element('div')]));
-  document.createElement=tag=>new Element(tag);
-  document.getElementById=id=>elements[id];
-  const window={parent:{postMessage:message=>messages.push({at:now,...message})},addEventListener:(type,callback)=>listeners.set(type,callback)};
-  const schedule=(callback,delay,period=0)=>{const id=++sequence;timers.set(id,{at:now+delay,callback,period});return id;};
-  const context={window,document,crypto:{randomUUID:()=>`request-${++sequence}`},
-    Date:{now:()=>now},setTimeout:(callback,delay)=>schedule(callback,delay),clearTimeout:id=>timers.delete(id),
-    setInterval:(callback,period)=>schedule(callback,period,period)};
-  runInNewContext(`${readFileSync(new URL('../assets/ledger_editor/state.js',import.meta.url),'utf8')}\nconst LedgerEditor=window.LedgerEditor;\n${readFileSync(new URL('../assets/ledger_editor/editor.js',import.meta.url),'utf8')}`,context);
-  const rows=['a','b'].map(id=>({id,receipt_revision:1,draft_revision:0,raw:{chart_no:id,patient_name:'합성',payments:{카드:'100'}}}));
-  const render=(extra={})=>listeners.get('message')({data:{type:'streamlit:render',args:{scope:'day',channels:['카드'],rows,...extra}}});
-  const field=(name,id='a')=>elements.rows.children.find(row=>row.dataset.id===id).querySelectorAll('input,select').find(input=>input.dataset.field===name);
-  const event=(input,type,extra={})=>input.listeners.get(type)?.({preventDefault(){},...extra});
-  const edit=(name,value,id='a')=>{const input=field(name,id);input.focus();input.value=value;event(input,'input');return input;};
-  function advance(milliseconds) {
-    const end=now+milliseconds;
-    for(;;) {
-      const due=[...timers].filter(([,timer])=>timer.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];
-      if(!due)break;
-      const [id,timer]=due;now=timer.at;timers.delete(id);
-      if(timer.period)timers.set(id,{...timer,at:now+timer.period});
-      timer.callback();
-    }
-    now=end;
-  }
-  render();
-  return {render,field,event,edit,advance,messages,
-    commands:()=>messages.filter(message=>message.type==='streamlit:setComponentValue'&&message.value.kind!=='checkpoint'),
-    checkpoints:()=>messages.filter(message=>message.type==='streamlit:setComponentValue'&&message.value.kind==='checkpoint')};
-}
+import { browser } from './ledger_browser.mjs';
 
 {
   const b=browser();b.edit('patient_name','수정');
