@@ -288,18 +288,48 @@ def require_app_access():
             _reset_workspace(logout=True)
             st.session_state["_auth_error"] = str(error)
             st.rerun()
-    st.markdown("### 지점 계정 로그인")
-    st.caption("개발 중인 정산 앱은 총괄관리자만 이용할 수 있습니다." if st.session_state.get("_development_mode")
-               else "지점 계정은 소속 지점의 정산과 누적 기록을 확인합니다.")
-    with st.form("app_access", clear_on_submit=True):
-        st.text_input("아이디", key="_auth_input_username", autocomplete="username")
-        st.text_input("비밀번호", type="password", key="_auth_input_password", autocomplete="current-password")
-        if not st.session_state.get("_development_mode"):
-            st.checkbox("로그인 유지 · 최대 180일", key="_auth_remember", value=False,
-                        help="개인 기기에서만 선택하세요. 공용 PC에서는 선택하지 마세요. 브라우저 설정에 따라 더 일찍 해제될 수 있습니다.")
-        st.form_submit_button("로그인", on_click=_submit_login)
-    if st.session_state.get("_auth_error"):
-        st.error(st.session_state["_auth_error"])
+    login_css = Path(__file__).resolve().parent / "assets" / "login.css"
+    st.markdown("<style>" + login_css.read_text() + "</style>", unsafe_allow_html=True)
+    with st.container(key="login_shell"):
+        panels = st.columns(2, gap="small")
+        with panels[0]:
+            st.markdown(
+                '<section class="clinic-login-intro" aria-label="병원 정산 관리">'
+                '<div class="clinic-login-brand"><span class="clinic-login-mark" aria-hidden="true">'
+                '<i></i><i></i><i></i></span><b>clinic.</b></div>'
+                '<div class="clinic-login-message"><span class="clinic-login-eyebrow">CLINIC SETTLEMENT MANAGER</span>'
+                '<h1>정확한 기록이 모여,<br>마감이 간편해집니다.</h1>'
+                '<p>수납부터 마감 대조까지<br>우리 병원의 정산을 한곳에서 관리하세요.</p></div>'
+                '<svg class="clinic-login-orbits" viewBox="0 0 360 300" aria-hidden="true">'
+                + ''.join(f'<ellipse cx="200" cy="160" rx="{110 + i * 9}" ry="{52 + i * 8}" '
+                          f'transform="rotate({-40 + i * 5} 200 160)" fill="none" '
+                          f'stroke="#87a2ff" stroke-opacity="{.25 + i * .06:.2f}"/>' for i in range(6))
+                + '<circle cx="303" cy="110" r="8" fill="#7895ff"/>'
+                '<circle cx="88" cy="196" r="4" fill="#d5dfff"/></svg>'
+                '<p class="clinic-login-private">우리 병원만의 정산 기록</p></section>',
+                unsafe_allow_html=True)
+        with panels[1]:
+            with st.container(key="login_form_panel"):
+                st.markdown(
+                    '<div class="clinic-login-heading"><span class="clinic-login-icon" aria-hidden="true">'
+                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" '
+                    'stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/>'
+                    '<path d="M9 21v-4h6v4M9 7h1m4 0h1M9 11h1m4 0h1M2 21h20"/></svg></span>'
+                    '<span class="clinic-login-welcome">WELCOME BACK</span><h2>정산관리 로그인</h2>'
+                    '<p>' + ("개발 중인 정산 앱은 총괄관리자만 이용할 수 있습니다."
+                             if st.session_state.get("_development_mode")
+                             else "지점 계정 또는 총괄 관리자 계정으로 로그인하세요.") + '</p></div>',
+                    unsafe_allow_html=True)
+                with st.form("app_access", clear_on_submit=True, border=False):
+                    st.text_input("아이디", key="_auth_input_username", autocomplete="username")
+                    st.text_input("비밀번호", type="password", key="_auth_input_password", autocomplete="current-password")
+                    if not st.session_state.get("_development_mode"):
+                        st.checkbox("로그인 유지 · 최대 180일", key="_auth_remember", value=False,
+                                    help="개인 기기에서만 선택하세요. 공용 PC에서는 선택하지 마세요. 브라우저 설정에 따라 더 일찍 해제될 수 있습니다.")
+                    st.form_submit_button("로그인", on_click=_submit_login, type="primary", use_container_width=True)
+                if st.session_state.get("_auth_error"):
+                    st.error(st.session_state["_auth_error"])
+                st.markdown('<div class="clinic-login-foot">수납 · 마감 대조 · 정산 기록</div>', unsafe_allow_html=True)
     return False
 
 

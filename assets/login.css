@@ -1,0 +1,89 @@
+/* Login-only styling keeps the native authenticated form and keyboard controls. */
+body:has(.st-key-login_shell) [data-testid="stAppViewContainer"] {
+  background: radial-gradient(ellipse at 16% 20%, #e7eaff 0, transparent 45%), #f3f4f9;
+}
+body:has(.st-key-login_shell) [data-testid="stHeader"],
+body:has(.st-key-login_shell) [data-testid="stSidebar"] { display: none; }
+[data-testid="stMainBlockContainer"]:has(.st-key-login_shell) {
+  max-width: none; min-height: 100svh; padding: 40px 20px; display: flex; align-items: center;
+}
+[data-testid="stMainBlockContainer"]:has(.st-key-login_shell) > [data-testid="stVerticalBlock"] {
+  width: 100%; margin-block: auto; gap: 0;
+}
+.st-key-login_shell {
+  width: min(960px, 100%); margin-inline: auto; border: 1px solid #e7eaf3;
+  border-radius: 28px; overflow: hidden; background: #fff; box-shadow: 0 24px 70px #17223b0b;
+}
+.st-key-login_shell [data-testid="stHorizontalBlock"] { gap: 0; align-items: stretch; }
+.st-key-login_shell [data-testid="stColumn"] { min-width: 0; padding: 0; }
+.st-key-login_shell [data-testid="stColumn"]:first-child { background: #192138; }
+.st-key-login_shell [data-testid="stColumn"] > [data-testid="stVerticalBlock"] { gap: 0; }
+.clinic-login-intro {
+  min-height: 640px; height: 100%; padding: 38px 40px; background: #192138; color: #fff;
+  display: flex; flex-direction: column; position: relative; overflow: hidden;
+}
+.clinic-login-brand { display: flex; align-items: center; gap: 12px; position: relative; z-index: 1; }
+.clinic-login-mark {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  width: 38px; height: 38px; border-radius: 13px; background: #315df6;
+}
+.clinic-login-mark i { width: 5px; border-radius: 5px; background: #fff; }
+.clinic-login-mark i:nth-child(1) { height: 11px; }
+.clinic-login-mark i:nth-child(2) { height: 22px; }
+.clinic-login-mark i:nth-child(3) { height: 16px; }
+.clinic-login-brand b { font-size: 30px; color: #fff; letter-spacing: -1.2px; line-height: 1.2; }
+.clinic-login-message { margin-top: 72px; position: relative; z-index: 1; }
+.clinic-login-eyebrow { font-size: 12px; letter-spacing: 1.5px; font-weight: 600; color: #b4c1e0; }
+.clinic-login-intro h1 {
+  color: #fff !important; font-size: 30px !important; font-weight: 700 !important;
+  letter-spacing: -1.3px; line-height: 1.55 !important; margin: 18px 0; padding: 0;
+}
+.clinic-login-message p { font-size: 15px !important; font-weight: 500; line-height: 1.9; color: #d2daec; }
+.clinic-login-orbits { position: absolute; width: 410px; height: 340px; bottom: 0; right: -90px; opacity: .65; }
+.clinic-login-private { color: #c2cde4; font-size: 13px !important; margin-top: auto; position: relative; z-index: 1; }
+.st-key-login_form_panel { padding: 48px 42px 36px; gap: 20px; }
+.clinic-login-icon {
+  width: 54px; height: 54px; display: grid; place-items: center; border-radius: 17px;
+  background: #edf1ff; color: #315df6; margin-bottom: 24px;
+}
+.clinic-login-icon svg { width: 26px; height: 26px; }
+.clinic-login-welcome { font-size: 12px; font-weight: 600; letter-spacing: 1.8px; color: #62718b; }
+.clinic-login-heading h2 {
+  font-size: 28px !important; font-weight: 750 !important; line-height: 1.4; color: #16233b;
+  padding: 0; margin: 9px 0 11px; letter-spacing: -1px;
+}
+.clinic-login-heading p { font-size: 14px !important; color: #52617a; line-height: 1.8; margin: 0; }
+.st-key-login_form_panel [data-testid="stForm"] { border: 0; padding: 0; }
+.st-key-login_form_panel [data-testid="stForm"] [data-testid="stVerticalBlock"] { gap: 19px; }
+.st-key-login_form_panel [data-testid="stWidgetLabel"] p { font-size: 14px; font-weight: 650; color: #26364c; }
+.st-key-login_form_panel [data-testid="stTextInput"] input {
+  font-size: 16px; font-weight: 500; color: #16233b; min-height: 48px; padding: 12px 13px; background: #fff;
+}
+.st-key-login_form_panel [data-baseweb="input"] {
+  border: 1px solid #dde4ee; border-radius: 13px; background: #fff; overflow: hidden;
+}
+.st-key-login_form_panel [data-baseweb="input"]:focus-within { border-color: #7e96ff; box-shadow: 0 0 0 3px #eaf0ff; }
+.st-key-login_form_panel [data-testid="stFormSubmitButton"] button {
+  width: 100%; min-height: 49px; border: 1px solid #315df6; border-radius: 13px;
+  background: #315df6; color: #fff; box-shadow: 0 4px 12px #315df61a;
+}
+.st-key-login_form_panel [data-testid="stFormSubmitButton"] button p { font-size: 15px; font-weight: 650; color: #fff; }
+.st-key-login_form_panel [data-testid="stFormSubmitButton"] button:hover { background: #244ee0; border-color: #244ee0; }
+.st-key-login_form_panel [data-testid="stFormSubmitButton"] button:disabled { opacity: .6; }
+.st-key-login_form_panel [data-testid="stAlert"] { font-size: 13px; border-radius: 12px; }
+.clinic-login-foot { border-top: 1px solid #edf0f5; padding-top: 22px; color: #52617a; font-size: 13px; line-height: 1.8; }
+@media (max-width: 760px) {
+  [data-testid="stMainBlockContainer"]:has(.st-key-login_shell) { padding: 18px 14px; }
+  .st-key-login_shell { width: min(480px, 100%); border-radius: 23px; }
+  .st-key-login_shell [data-testid="stHorizontalBlock"] { flex-direction: column; }
+  .st-key-login_shell [data-testid="stColumn"] { width: 100%; flex-basis: auto; }
+  .clinic-login-intro { min-height: 290px; padding: 26px 28px; }
+  .clinic-login-brand b { font-size: 26px; }
+  .clinic-login-message { margin-top: 27px; }
+  .clinic-login-intro h1 { font-size: 25px !important; margin: 12px 0; line-height: 1.5 !important; }
+  .clinic-login-message p { font-size: 14px !important; }
+  .clinic-login-orbits { width: 250px; height: 210px; right: -95px; bottom: -40px; }
+  .clinic-login-private, .clinic-login-icon { display: none; }
+  .st-key-login_form_panel { padding: 30px 28px; }
+  .clinic-login-heading h2 { font-size: 25px !important; }
+}

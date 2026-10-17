@@ -39,6 +39,8 @@ CI run 38839696277의 Python 3.11/3.12/3.13 및 PostgreSQL 테스트 586개/화�
 
 ### 전체 화면 B · 2026-10-17
 
+- 로그인은 `app.require_app_access`의 기존 폼을 유지하며 `assets/login.css`의 2열 카드 디자인을 A/B에서 공유한다. `web_static/index.html`의 독립 HTTP 로그인도 같은 남색·파랑 디자인이다. 실제 인증 기능 없이 로그인 유지나 ChatGPT 인증 옵션을 표시하지 않는다.
+
 - 컬럼 제목은 수납·환불·기간 기록·일일 마감에서 `web_static/styles.css`의 남색/굵기 650 규칙을 공유한다.
 - 갱신 함정: 인증 모듈 교체 후 남아 있는 개발 검사 모듈의 import-time `Principal`은 새 로그인 객체를 거부할 수 있다. `staging.require_preview`는 호출 시 최신 인증 타입을 import하며 기존 타입·총괄 역할 검사를 유지한다. 현재 계정 시트의 권한이 올바른 경우 이름 기반 승격으로 우회하지 않는다.
 
