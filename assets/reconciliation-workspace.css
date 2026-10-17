@@ -14,7 +14,9 @@ html, body, [data-testid="stApp"], button, input, textarea, select,
 [data-testid="stAppViewContainer"] {background:#f4f6fa;color:#18212f;}
 [data-testid="stMainBlockContainer"] {max-width:1750px;padding:0 38px 32px;}
 [data-testid="stHeader"] {height:0;background:transparent;}
-[data-testid="stSidebar"] {width:236px!important;min-width:236px!important;max-width:236px!important;background:#172b3e;border:0;color:#d9e2ed;}
+[data-testid="stSidebar"] {width:236px!important;background:#172b3e;border:0;color:#d9e2ed;}
+[data-testid="stSidebar"][data-collapsed="false"] {min-width:236px!important;max-width:236px!important;}
+[data-testid="stSidebar"][data-collapsed="true"] {min-width:0!important;max-width:0!important;}
 [data-testid="stSidebar"] > div:first-child {padding-top:20px;}
 [data-testid="stSidebarUserContent"] {padding:12px 20px 20px;}
 [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {gap:4px;}
