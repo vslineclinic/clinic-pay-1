@@ -53,8 +53,8 @@
       onUnauthorized = () => {},
       uuid = () => crypto.randomUUID(),
       clock = () => Date.now(),
-      setTimer = setTimeout,
-      clearTimer = clearTimeout,
+      setTimer = (...args) => root.setTimeout(...args),
+      clearTimer = id => root.clearTimeout(id),
       delay = 1200,
       maxWait = 5000
     }) {

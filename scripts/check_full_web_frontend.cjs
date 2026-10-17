@@ -70,6 +70,32 @@ function fixture(request) {
   };
 }
 (async () => {
+  const clearedTimers = [];
+  const browserWindow = {
+    LedgerEditor: require('../web_static/state.js'),
+    setTimeout(callback, delay) {
+      if (this !== browserWindow) throw TypeError('Illegal invocation');
+      assert.equal(typeof callback, 'function');
+      assert.equal(delay, 1200);
+      return 17;
+    },
+    clearTimeout(id) {
+      if (this !== browserWindow) throw TypeError('Illegal invocation');
+      clearedTimers.push(id);
+    }
+  };
+  vm.runInNewContext(fs.readFileSync('web_static/core.js', 'utf8'), {
+    window: browserWindow,
+    setTimeout: browserWindow.setTimeout,
+    clearTimeout: browserWindow.clearTimeout
+  });
+  const browserController = new browserWindow.LedgerCore.SaveController({
+    request: async () => ({}),
+    clock: () => 0
+  });
+  browserController.changed('browser-scope');
+  browserController.stop();
+  assert.deepEqual(clearedTimers, [undefined, 17], 'editing and logout keep the browser timer receiver');
   assert.equal(money('9,007,199,254,740,993'), 9007199254740993n);
   assert.equal(total({
     ...blank(),
