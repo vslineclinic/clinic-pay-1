@@ -17,6 +17,7 @@
     workbench: '대조 작업대',
     closing: '일일 마감',
     history: '기간별 기록',
+    'reconciliation-history': '정산 기록',
     analysis: '오차 분석',
     activity: '변경 이력'
   };
@@ -167,15 +168,15 @@
     $('#password').value = '';
     $('#profile-name').textContent = session.user.username;
     $('#branch-select').innerHTML = session.branches.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join('');
-    branch = session.branches.includes(branch) ? branch : session.branches[0];
-    date = date || session.today;
+    branch = session.branches.includes(session.workspace?.branch) ? session.workspace.branch : session.branches.includes(branch) ? branch : session.branches[0];
+    date = session.workspace?.business_date || date || session.today;
     rangeFrom = date.slice(0, 8) + '01';
     rangeTo = date;
     $('#branch-select').value = branch;
     $('#workspace-name').textContent = branch;
     $('#business-date').value = date;
     const hash = location.hash.slice(1);
-    tab = labels[hash] ? hash : 'ledger';
+    tab = labels[session.tab] ? session.tab : labels[hash] ? hash : 'ledger';
     await refreshWorkspace(true);
     schedulePoll();
   }
@@ -466,7 +467,7 @@
   function closingView() {
     const receipts = workspace.day.receipts.filter(r => !r.voided),
       sum = (key, kind) => receipts.filter(r => r.kind === kind).reduce((n, r) => n + C.money(r.payments[key]), 0n);
-    return heading('DAILY CLOSE', '하루의 끝, 빠짐없는 마감', '저장된 결제수단별 수납과 환불을 검토하고 원장 스냅샷을 보관합니다.', isClosed() ? '<button class="btn" id="reopen-day">사유를 남기고 재개방</button>' : '<button class="btn primary" id="close-day">마감 검토하기 →</button>') + statCards() + `<div class="closing-grid"><section class="panel"><div class="panel-head"><div><div class="panel-title">결제수단별 마감</div><div class="panel-subtitle">저장된 원장 기준 · 환불은 양의 차감액으로 표시</div></div></div><table class="closing-table"><thead><tr><th>결제수단</th><th>수납</th><th>환불</th><th>순수납</th></tr></thead><tbody>${C.CHANNELS.map(key => `<tr><td>${key}</td><td>${C.won(sum(key, 'receipt'))}</td><td>${C.won(sum(key, 'refund'))}</td><td>${C.won(sum(key, 'receipt') - sum(key, 'refund'))}</td></tr>`).join('')}</tbody></table></section><section class="panel"><div class="panel-head"><div class="panel-title">마감 전 확인</div><span class="badge ${isClosed() ? 'ok' : 'review'}">${isClosed() ? '마감됨' : '검토 필요'}</span></div><div class="neutral-notice"><h3>수납원장 개정 ${workspace.day.revision}</h3><p>전체 미완료 초안 ${workspace.pending_count}건 (다른 사용자의 초안 포함) · 이 브라우저 ${allPending() ? '저장 대기/확인할 입력 있음' : '전송 대기 없음'}</p><p>마감은 현재 원장을 고정하는 기능입니다. 단말기 마감·베가스 마감과의 대조 완료를 뜻하지 않습니다.</p><a href="https://vsline-clinic-pay-1.streamlit.app/" target="_blank" rel="noopener" class="btn analysis-link" data-engine>기존 대조 엔진에서 확인 ↗</a></div></section></div>`;
+    return heading('DAILY CLOSE', '하루의 끝, 빠짐없는 마감', '저장된 결제수단별 수납과 환불을 검토하고 원장 스냅샷을 보관합니다.', isClosed() ? '<button class="btn" id="reopen-day">사유를 남기고 재개방</button>' : '<button class="btn primary" id="close-day">마감 검토하기 →</button>') + statCards() + `<div class="closing-grid"><section class="panel"><div class="panel-head"><div><div class="panel-title">결제수단별 마감</div><div class="panel-subtitle">저장된 원장 기준 · 환불은 양의 차감액으로 표시</div></div></div><table class="closing-table"><thead><tr><th>결제수단</th><th>수납</th><th>환불</th><th>순수납</th></tr></thead><tbody>${C.CHANNELS.map(key => `<tr><td>${key}</td><td>${C.won(sum(key, 'receipt'))}</td><td>${C.won(sum(key, 'refund'))}</td><td>${C.won(sum(key, 'receipt') - sum(key, 'refund'))}</td></tr>`).join('')}</tbody></table></section><section class="panel"><div class="panel-head"><div class="panel-title">마감 전 확인</div><span class="badge ${isClosed() ? 'ok' : 'review'}">${isClosed() ? '마감됨' : '검토 필요'}</span></div><div class="neutral-notice"><h3>수납원장 개정 ${workspace.day.revision}</h3><p>전체 미완료 초안 ${workspace.pending_count}건 (다른 사용자의 초안 포함) · 이 브라우저 ${allPending() ? '저장 대기/확인할 입력 있음' : '전송 대기 없음'}</p><p>마감은 현재 원장을 고정하는 기능입니다. 단말기 마감·베가스 마감과의 대조 완료를 뜻하지 않습니다.</p><button class="btn analysis-link" data-engine="workbench">마감 파일 업로드·대조하기 →</button></div></section></div>`;
   }
   async function closeDay() {
     if (allPending() || workspace.pending_count) {
@@ -517,7 +518,7 @@
     });
   }
   function historyView() {
-    return heading('DAILY HISTORY', '기간별 기록', '이전 영업일의 기록과 마감 상태를 확인하고 다시 열어 보세요.', '<button class="btn" id="download-backup">↓ 검증 백업 다운로드</button>') + `<section class="panel"><div class="history-filter"><label class="field">시작일<input id="range-from" type="date" value="${rangeFrom}"></label><span>—</span><label class="field">종료일<input id="range-to" type="date" value="${rangeTo}"></label><button class="btn primary" id="apply-range">조회</button><small>한국 영업일 기준</small></div><div id="history-results" class="loading-line">기록을 불러오는 중입니다.</div></section><div class="info-banner stack-gap">ⓘ <span>다운로드는 전체 원장 검증 백업입니다. 자동 백업 예약이나 별도 보관을 대신하지 않습니다.</span></div>`;
+    return heading('DAILY HISTORY', '기간별 기록', '이전 영업일의 기록과 마감 상태를 확인하고 다시 열어 보세요.', '<button class="btn" data-engine="reconciliation-history">정산 결과 기록</button><button class="btn" id="download-backup">↓ 검증 백업 다운로드</button>') + `<section class="panel"><div class="history-filter"><label class="field">시작일<input id="range-from" type="date" value="${rangeFrom}"></label><span>—</span><label class="field">종료일<input id="range-to" type="date" value="${rangeTo}"></label><button class="btn primary" id="apply-range">조회</button><small>한국 영업일 기준</small></div><div id="history-results" class="loading-line">기록을 불러오는 중입니다.</div></section><div class="info-banner stack-gap">ⓘ <span>다운로드는 전체 원장 검증 백업입니다. 자동 백업 예약이나 별도 보관을 대신하지 않습니다.</span></div>`;
   }
   async function loadHistory() {
     const sequence = ++extraSequence,
@@ -568,15 +569,10 @@
     }
   }
   function engineView() {
-    return heading(tab === 'analysis' ? 'EVIDENCE REVIEW' : 'RECONCILIATION WORKSPACE', tab === 'analysis' ? '근거로 좁히는 오차 분석' : '선택일 수납, 한눈에 정확하게', '단말기 마감·웹 수납원장·베가스 마감 대조는 기존 검증 엔진으로 이어집니다.') + statCards() + `<section class="panel"><div class="panel-head"><div><div class="panel-title">기존 정산 엔진 연결</div><div class="panel-subtitle">선택 지점 ${esc(branch)} · ${date}</div></div><span class="badge review">별도 화면</span></div><div class="neutral-notice"><h3>입력은 B에서, 대조와 AI 검토는 기존 엔진에서</h3><p>기존 앱에서 같은 지점과 날짜의 수납원장을 선택한 뒤 단말기 마감·베가스 마감 파일을 확인해 주세요. 원천을 불러오기 전에는 일치 여부를 계산하거나 정상 정산으로 표시하지 않습니다.</p><p>현재 원장의 미완료 초안과 저장 대기 입력을 모두 처리한 뒤 대조를 진행하세요.</p><a class="btn primary" data-engine href="https://vsline-clinic-pay-1.streamlit.app/" target="_blank" rel="noopener">기존 대조·AI 분석 열기 ↗</a></div></section>`;
+    return heading('RECONCILIATION WORKSPACE', '마감 파일 대조', '단말기 마감·일일마감·베가스 마감을 비교하고 차이의 근거를 확인합니다.') + statCards() + `<section class="panel"><div class="panel-head"><div><div class="panel-title">분석 자료 준비</div><div class="panel-subtitle">${esc(branch)} · ${date}</div></div></div><div class="neutral-notice"><h3>하루 정밀 분석과 기간 분석</h3><p>현재 원장, 구글시트 또는 업로드 파일을 베가스 수납 파일과 대조합니다. 결과에서 환자별 검증·AI 설명·엑셀 다운로드를 사용할 수 있습니다.</p><button class="btn primary" data-engine="workbench">하루 마감 파일 올리기</button> <button class="btn" data-engine="period">기간 자료 대조</button> <button class="btn" data-engine="reconciliation-history">정산 결과 기록</button>${T.mode === 'demo' ? '<p>가상 자료 체험 화면입니다. 실제 파일 분석은 정산앱에서 사용할 수 있습니다.</p>' : ''}</div></section>`;
   }
   function bindEngineLinks() {
-    document.querySelectorAll('[data-engine]').forEach(a => a.onclick = e => {
-      if (T.navigate) {
-        e.preventDefault();
-        navigateEngine('analysis');
-      }
-    });
+    document.querySelectorAll('[data-engine]').forEach(a => a.onclick = () => navigateEngine(a.dataset.engine || 'workbench'));
   }
   async function navigateEngine(destination) {
     if (allPending()) {
@@ -584,7 +580,11 @@
       return;
     }
     try {
-      await T.navigate(destination);
+      if (!T.navigate) {
+        toast('실제 파일 대조는 로그인한 정산앱에서 사용할 수 있습니다.');
+        return;
+      }
+      await T.navigate(destination, {branch, date});
     } catch (error) {
       toast(error.message);
     }
@@ -685,6 +685,10 @@
   });
   $('#refresh-day').onclick = () => refreshWorkspace(false);
   document.querySelectorAll('[data-tab]').forEach(button => button.onclick = () => {
+    if (T.navigate && ['workbench', 'analysis', 'reconciliation-history'].includes(button.dataset.tab)) {
+      navigateEngine(button.dataset.tab);
+      return;
+    }
     closeEditor();
     tab = button.dataset.tab;
     extraSequence++;

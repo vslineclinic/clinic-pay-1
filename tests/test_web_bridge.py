@@ -145,3 +145,36 @@ def test_full_web_session_and_navigation_do_not_accept_client_credentials(store)
     assert call(store, '/api/navigation', 'POST', {'target': 'https://evil.invalid'})['status'] == 400
     assert call(store, '/api/navigation', 'POST', {'target': 'table'})['control'] == 'table'
     assert call(store, '/api/session', 'DELETE')['control'] == 'logout'
+
+
+def test_reconciliation_navigation_carries_server_verified_day(store):
+    scope = call(store)['data']['scope']
+    call(store, '/api/ledger/actions', 'POST', save_command(scope))
+    reply = call(store, '/api/navigation', 'POST', {
+        'target': 'analysis', 'branch': BRANCH, 'date': DAY,
+    })
+    assert reply['status'] == 200
+    assert reply['data']['workspace'] == {
+        'branch': BRANCH, 'business_date': DAY, 'revision': 1,
+    }
+    assert reply['data']['use_ledger'] is True
+    assert call(store, '/api/navigation', 'POST', {
+        'target': 'period', 'branch': BRANCH, 'date': DAY,
+    })['control'] == 'period'
+    assert call(store, '/api/navigation', 'POST', {
+        'target': 'analysis', 'branch': BRANCH, 'date': '2026-02-30',
+    })['status'] == 400
+
+
+def test_reconciliation_navigation_does_not_leave_unfinished_drafts(store):
+    scope = call(store)['data']['scope']
+    call(store, '/api/ledger/actions', 'POST', save_command(scope, amount='1,2'))
+    reply = call(store, '/api/navigation', 'POST', {
+        'target': 'analysis', 'branch': BRANCH, 'date': DAY,
+    })
+    assert reply['status'] == 400
+    assert '초안' in reply['data']['error']['message']
+    assert 'control' not in reply
+    omitted = call(store, '/api/navigation', 'POST', {'target': 'workbench'})
+    assert omitted['status'] == 400
+    assert 'control' not in omitted

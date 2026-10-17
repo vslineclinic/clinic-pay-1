@@ -110,6 +110,8 @@ def _reset_workspace(logout=False):
             for key in (f"_ledger_client_{actor}", f"_ledger_scopes_{actor}"):
                 if key in st.session_state:
                     keep[key] = st.session_state[key]
+            if "_full_web_context" in st.session_state:
+                keep["_full_web_context"] = st.session_state["_full_web_context"]
         _clear_session_media()
         st.session_state.clear()
         st.session_state.update(keep)
@@ -6025,7 +6027,7 @@ def _render_account_page():
         st.error(st.session_state["_account_error"])
 
 
-def main(development=False):
+def main(development=False, full_web=False):
     st.session_state["_development_mode"] = bool(development)
     assets = Path(__file__).resolve().parent / "assets"
     st.set_page_config(page_title="clinic · 마감 대조", layout="wide",
@@ -6045,51 +6047,55 @@ def main(development=False):
 
     has_results = st.session_state.get("done") or st.session_state.get("period_done")
     mode = "하루 정밀 분석"
-    with st.sidebar:
+    if full_web:
+        from reconciliation_workspace import render_shell
+        workspace_view, mode = render_shell(principal, has_results)
+    else:
+        with st.sidebar:
+            st.markdown(
+                '<div class="clinic-brand" aria-label="clinic 정산 관리">'
+                '<span class="clinic-brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>'
+                '<span class="clinic-brand-word">clinic<b>.</b><small>RECONCILIATION</small></span></div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown('<div class="clinic-sidebar-label">WORKSPACE</div>', unsafe_allow_html=True)
+            st.caption(f"{principal.username} · {'총괄관리자' if principal.is_admin else principal.branch}")
+            if st.button("로그아웃", key="logout", on_click=_reset_workspace, kwargs={"logout": True}):
+                st.rerun()
+            workspace_views = (["수납원장", "마감 대조", "정산 기록"] if development else
+                               ["마감 대조", "정산 기록"] + (["계정 관리"] if principal.is_admin else []))
+            if st.session_state.get("workspace_view") not in workspace_views:
+                st.session_state.pop("workspace_view", None)
+            workspace_view = st.radio("화면", workspace_views, key="workspace_view",
+                                      label_visibility="collapsed")
+            if workspace_view == "정산 기록":
+                st.caption("지점·월별로 저장된 결과를 확인합니다.")
+            elif workspace_view == "마감 대조" and not has_results:
+                mode = st.radio("분석 모드", ["하루 정밀 분석", "기간 분석"],
+                                key="analysis_mode", label_visibility="collapsed",
+                                help="하루는 환자별 정밀 대조, 기간은 날짜별 차이와 확인할 거래를 살펴봅니다.")
+            else:
+                st.markdown("**마감 대조 결과**")
+                st.caption("아래 결과에서 차이와 환자별 검증을 확인하세요.")
+            st.markdown(
+                '<div class="clinic-sidebar-label">비교하는 세 자료</div>'
+                '<div class="clinic-sources"><div>단말기 마감<small>카드 승인 · 취소 / 선택 자료</small></div>'
+                '<div>구글 일일마감<small>프론트 수납 기록</small></div>'
+                '<div>베가스 마감<small>수납 파일 / 대조 기준원장</small></div></div>'
+                '<div class="clinic-sidebar-note">합계의 차이와 환자별 기록을 함께 확인합니다.<br>'
+                '원인 후보는 근거를 살펴본 뒤 판단해 주세요.</div>', unsafe_allow_html=True,
+            )
+        workspace_label = workspace_view if workspace_view != "마감 대조" else ("마감 대조 결과" if has_results else mode)
         st.markdown(
-            '<div class="clinic-brand" aria-label="clinic 정산 관리">'
-            '<span class="clinic-brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>'
-            '<span class="clinic-brand-word">clinic<b>.</b><small>RECONCILIATION</small></span></div>',
+            '<div class="clinic-topbar"><span class="clinic-breadcrumb">CLINIC / RECONCILIATION</span>'
+            '<span class="clinic-status">베가스 마감 기준</span></div>'
+            f'<div class="clinic-page-heading"><h1>{workspace_label}</h1>'
+            '<p>세 자료의 수납 기록을 비교하고, 확인이 필요한 거래를 찾아보세요.</p></div>',
             unsafe_allow_html=True,
         )
-        st.markdown('<div class="clinic-sidebar-label">WORKSPACE</div>', unsafe_allow_html=True)
-        st.caption(f"{principal.username} · {'총괄관리자' if principal.is_admin else principal.branch}")
-        if st.button("로그아웃", key="logout", on_click=_reset_workspace, kwargs={"logout": True}):
-            st.rerun()
-        workspace_views = (["수납원장", "마감 대조", "정산 기록"] if development else
-                           ["마감 대조", "정산 기록"] + (["계정 관리"] if principal.is_admin else []))
-        if st.session_state.get("workspace_view") not in workspace_views:
-            st.session_state.pop("workspace_view", None)
-        workspace_view = st.radio("화면", workspace_views, key="workspace_view",
-                                  label_visibility="collapsed")
-        if workspace_view == "정산 기록":
-            st.caption("지점·월별로 저장된 결과를 확인합니다.")
-        elif workspace_view == "마감 대조" and not has_results:
-            mode = st.radio("분석 모드", ["하루 정밀 분석", "기간 분석"],
-                            key="analysis_mode", label_visibility="collapsed",
-                            help="하루는 환자별 정밀 대조, 기간은 날짜별 차이와 확인할 거래를 살펴봅니다.")
-        else:
-            st.markdown("**마감 대조 결과**")
-            st.caption("아래 결과에서 차이와 환자별 검증을 확인하세요.")
-        st.markdown(
-            '<div class="clinic-sidebar-label">비교하는 세 자료</div>'
-            '<div class="clinic-sources"><div>단말기 마감<small>카드 승인 · 취소 / 선택 자료</small></div>'
-            '<div>구글 일일마감<small>프론트 수납 기록</small></div>'
-            '<div>베가스 마감<small>수납 파일 / 대조 기준원장</small></div></div>'
-            '<div class="clinic-sidebar-note">합계의 차이와 환자별 기록을 함께 확인합니다.<br>'
-            '원인 후보는 근거를 살펴본 뒤 판단해 주세요.</div>', unsafe_allow_html=True,
-        )
-    workspace_label = workspace_view if workspace_view != "마감 대조" else ("마감 대조 결과" if has_results else mode)
-    st.markdown(
-        '<div class="clinic-topbar"><span class="clinic-breadcrumb">CLINIC / RECONCILIATION</span>'
-        '<span class="clinic-status">베가스 마감 기준</span></div>'
-        f'<div class="clinic-page-heading"><h1>{workspace_label}</h1>'
-        '<p>세 자료의 수납 기록을 비교하고, 확인이 필요한 거래를 찾아보세요.</p></div>',
-        unsafe_allow_html=True,
-    )
 
-    if development:
-        st.info("clinic-pay-1 개발본 · 총괄관리자 전용 · 운영 원본과 별도 저장")
+        if development:
+            st.info("clinic-pay-1 개발본 · 총괄관리자 전용 · 운영 원본과 별도 저장")
     if workspace_view == "수납원장":
         _render_development_ledger(principal)
         return
