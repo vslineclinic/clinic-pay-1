@@ -674,3 +674,7 @@ git hook은 `.git/hooks`에 계정·환경마다 별도 설치가 필요해 *"�
 - `templates/일일마감_표준양식.xlsx` — 지점 배포용 템플릿
 - `.devcontainer/devcontainer.json` — Codespaces 즉시 실행 설정
 - 코드 내 섹션 주석(`# ━━━`)이 12개 구간의 목차 역할을 한다
+
+## 2026-10-18 B 파일 대조 통합
+
+전체 B의 대조 작업대·오차 분석은 같은 `ledger_view=full-web` 안에서 업로드와 분석을 실행한다. `workspace`는 workbench/period/analysis/reconciliation-history다. 기존 app.py 계산/AI/내보내기/권한을 재사용하고 reconciliation_workspace.py/CSS가 B 메뉴와 스타일을 담당한다. 수납 원장/일일 마감/기간별 기록/변경 이력으로 돌아가도 B 경로를 유지한다. 정산 기록은 전용 DB의 분석 요약이며 운영 Google 기록과 분리한다. 회귀 검사는 scripts/smoke_reconciliation_workspace.py, CI에 포함.

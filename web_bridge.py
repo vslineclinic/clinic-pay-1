@@ -17,13 +17,14 @@ from receipt_ledger import ConflictError, LedgerError, PAY_CHANNELS, ValidationE
 from staging import require_preview
 
 
-def session_payload(principal):
+def session_payload(principal, workspace=None, tab='ledger'):
     return {
         'authenticated': principal is not None, 'csrf_token': '',
         'user': ({'username': principal.username, 'role': principal.role, 'branch': principal.branch}
                  if principal else None),
         'branches': list(CANONICAL_BRANCHES), 'channels': list(PAY_CHANNELS),
         'today': kst_today().isoformat(), 'transport': 'streamlit',
+        'workspace': workspace, 'tab': tab,
     }
 
 
@@ -73,10 +74,20 @@ def dispatch_request(store, principal, validate, request):
             response['control'] = 'logout'
         elif path == '/api/navigation' and method == 'POST':
             target = body.get('target')
-            if target not in ('table', 'analysis'):
+            if target not in ('table', 'analysis', 'workbench', 'period', 'reconciliation-history'):
                 raise ValueError
-            response['control'] = target
+            if target != 'table' and not all(key in body for key in ('branch', 'date')):
+                raise ValueError
             data = {'ok': True}
+            if 'branch' in body or 'date' in body:
+                _scope(principal, body.get('branch'), body.get('date'))
+                day = store.load_day(principal, body['branch'], body['date'])
+                if target != 'table' and (day.get('pending_draft_count', 0)
+                        or store.list_drafts(principal, body['branch'], body['date'])):
+                    raise ValidationError('확인할 초안이 있습니다. 수납원장에서 저장 상태를 먼저 정리해 주세요.')
+                data['workspace'] = {key: day[key] for key in ('branch', 'business_date', 'revision')}
+                data['use_ledger'] = any(not row.get('voided') for row in day.get('receipts', []))
+            response['control'] = target
         elif path == '/api/ledger/backup' and method == 'GET':
             # Keep the checksum-bearing envelope byte-for-byte equivalent to the store export.
             data = store.export_backup(principal)
@@ -153,15 +164,29 @@ def render_full_web(principal, store, validate):
             if control == 'logout':
                 app._reset_workspace(logout=True)
                 st.rerun(scope='app')
-            elif control in ('table', 'analysis'):
+            elif control == 'table':
                 st.query_params['ledger_view'] = 'table'
-                st.session_state['workspace_view'] = '수납원장' if control == 'table' else '마감 대조'
+                st.session_state['workspace_view'] = '수납원장'
+                st.rerun(scope='app')
+            elif control in ('analysis', 'workbench', 'period', 'reconciliation-history'):
+                context = response['data'].get('workspace')
+                if context:
+                    previous_context = st.session_state.get('_full_web_context')
+                    if previous_context != context:
+                        app._reset_workspace()
+                    st.session_state['_full_web_context'] = context
+                    st.session_state['_ledger_selection'] = context
+                    st.session_state.setdefault('daily_mode', '수납원장' if response['data'].get('use_ledger') else '구글시트 연동')
+                page = control
+                st.query_params['workspace'] = page
+                st.session_state['_full_web_page'] = page
                 st.rerun(scope='app')
             elif response['status'] == 403:
                 app._reset_workspace(logout=True)
                 st.session_state['_auth_error'] = response['data']['error']['message']
                 st.rerun(scope='app')
-        component(identity=identity, session=session_payload(principal),
+        component(identity=identity, session=session_payload(
+                  principal, st.session_state.get('_full_web_context'), st.query_params.get('workspace', 'ledger')),
                   response=st.session_state.get(reply_key), height=1000,
                   key=widget_key, default=None)
 
@@ -172,6 +197,10 @@ def main():
     """Reuse the development app login and secrets without starting another server port."""
     import streamlit as st
     import app
+
+    if st.query_params.get('workspace') in ('workbench', 'analysis', 'period', 'reconciliation-history'):
+        app.main(development=True, full_web=True)
+        return
 
     st.session_state['_development_mode'] = True
     st.set_page_config(page_title='clinic pay · 수납원장 B', layout='wide', initial_sidebar_state='collapsed')

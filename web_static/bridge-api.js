@@ -66,7 +66,7 @@
   }
   window.LedgerTransport = {
     request,
-    navigate: target => request('/api/navigation', {method: 'POST', body: {target}}),
+    navigate: (target, workspace = {}) => request('/api/navigation', {method: 'POST', body: {target, ...workspace}}),
   };
   send('streamlit:componentReady', {apiVersion: 1});
   send('streamlit:setFrameHeight', {height: 1000});
