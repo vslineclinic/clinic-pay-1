@@ -6,6 +6,7 @@ dialog stay in the browser; durable writes still use the existing LedgerStore.
 from copy import deepcopy
 from datetime import date
 import json
+import logging
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
@@ -15,6 +16,9 @@ from ledger_component import component_scope
 from ledger_ui import dispatch_action, editor_rows, editor_summary, kst_today
 from receipt_ledger import ConflictError, LedgerError, PAY_CHANNELS, ValidationError
 from staging import require_preview
+
+
+_LOG = logging.getLogger(__name__)
 
 
 def session_payload(principal, workspace=None, tab='ledger'):
@@ -40,33 +44,52 @@ def _wire(value):
 
 
 def _scope(principal, branch, business_date):
-    if (branch not in CANONICAL_BRANCHES or not isinstance(business_date, str)
-            or date.fromisoformat(business_date).isoformat() != business_date):
-        raise ValidationError('지점과 영업일을 확인해 주세요.')
+    try:
+        if (branch not in CANONICAL_BRANCHES or not isinstance(business_date, str)
+                or date.fromisoformat(business_date).isoformat() != business_date):
+            raise ValueError
+    except (ValueError, TypeError):
+        raise ValidationError('지점과 영업일을 다시 선택해 주세요.') from None
     return component_scope(f'{principal.username}:{principal.revision}', branch, business_date)
+
+
+def _parse_request(request):
+    """Validate the client envelope before executing code that can fail independently."""
+    try:
+        if (not isinstance(request, dict) or not isinstance(request.get('request_id'), str)
+                or str(UUID(request['request_id'])) != request['request_id']):
+            raise ValueError
+        size = len(json.dumps(request, ensure_ascii=False, allow_nan=False).encode())
+    except (ValueError, TypeError, AttributeError, RecursionError):
+        raise ValidationError('요청 정보가 올바르지 않습니다. 입력을 보존한 뒤 화면을 새로고침해 주세요.') from None
+    if size > 200_000:
+        raise ValidationError('한 번에 보낼 입력이 너무 큽니다. 입력 내용을 나누어 저장해 주세요.')
+    try:
+        method, path = request.get('method', 'GET'), request.get('path', '')
+        if not isinstance(path, str) or not path.startswith('/'):
+            raise ValueError
+        url = urlsplit(path)
+        if method not in ('GET', 'POST', 'DELETE') or url.scheme or url.netloc or url.fragment:
+            raise ValueError
+        query = parse_qs(url.query, keep_blank_values=True, strict_parsing=True)
+        if any(len(values) != 1 for values in query.values()):
+            raise ValueError
+    except (ValueError, TypeError, AttributeError):
+        raise ValidationError('화면의 요청 주소가 올바르지 않습니다. 메뉴를 다시 선택해 주세요.') from None
+    body = request.get('body', {})
+    if body is None:
+        body = {}
+    if not isinstance(body, dict):
+        raise ValidationError('전송할 입력이 올바르지 않습니다. 입력 내용을 보존하고 다시 시도해 주세요.')
+    return method, url.path, {key: values[0] for key, values in query.items()}, body
 
 
 def dispatch_request(store, principal, validate, request):
     """Authorize and dispatch one same-session component request; never accept a client principal."""
     response = {'request_id': request.get('request_id') if isinstance(request, dict) else None}
     try:
-        if (not isinstance(request, dict) or not isinstance(request.get('request_id'), str)
-                or str(UUID(request['request_id'])) != request['request_id']
-                or len(json.dumps(request, ensure_ascii=False, allow_nan=False).encode()) > 200_000):
-            raise ValueError
+        method, path, query, body = _parse_request(request)
         principal = require_preview(validate(principal))
-        method = request.get('method', 'GET')
-        url = urlsplit(request.get('path', ''))
-        if method not in ('GET', 'POST', 'DELETE') or url.scheme or url.netloc or url.fragment:
-            raise ValueError
-        query = parse_qs(url.query, keep_blank_values=True, strict_parsing=True)
-        if any(len(values) != 1 for values in query.values()):
-            raise ValueError
-        query = {key: values[0] for key, values in query.items()}
-        body = request.get('body') or {}
-        if not isinstance(body, dict):
-            raise ValueError
-        path = url.path
         if path == '/api/session' and method == 'GET':
             data = session_payload(principal)
         elif path == '/api/session' and method == 'DELETE':
@@ -75,9 +98,9 @@ def dispatch_request(store, principal, validate, request):
         elif path == '/api/navigation' and method == 'POST':
             target = body.get('target')
             if target not in ('table', 'analysis', 'workbench', 'period', 'reconciliation-history'):
-                raise ValueError
+                raise ValidationError('지원하지 않는 화면입니다. 현재 메뉴에서 다시 선택해 주세요.')
             if target != 'table' and not all(key in body for key in ('branch', 'date')):
-                raise ValueError
+                raise ValidationError('분석할 지점과 영업일을 먼저 선택해 주세요.')
             data = {'ok': True}
             if 'branch' in body or 'date' in body:
                 _scope(principal, body.get('branch'), body.get('date'))
@@ -110,7 +133,7 @@ def dispatch_request(store, principal, validate, request):
             elif path == '/api/ledger/actions' and method == 'POST':
                 action = body.get('action')
                 if not isinstance(action, dict):
-                    raise ValueError
+                    raise ValidationError('저장할 수납 내용이 없습니다. 입력 내용을 보존하고 다시 시도해 주세요.')
                 data = {'ack': dispatch_action(store, principal, branch, business_date, action, scope)}
             elif path == '/api/ledger/events' and method == 'GET':
                 data = {'events': _wire(store.list_events(principal, branch, business_date))}
@@ -119,11 +142,11 @@ def dispatch_request(store, principal, validate, request):
                 data = {'snapshots': [{**_wire(item), 'download_json': json.dumps(
                     item, ensure_ascii=False, allow_nan=False)} for item in snapshots]}
             elif path == '/api/ledger/close' and method == 'POST':
-                data = {'result': _wire(store.close_day(principal, body['request_id'], branch,
-                                                       business_date, body['expected_revision']))}
+                data = {'result': _wire(store.close_day(principal, body.get('request_id'), branch,
+                                                       business_date, body.get('expected_revision')))}
             elif path == '/api/ledger/reopen' and method == 'POST':
-                data = {'result': _wire(store.reopen_day(principal, body['request_id'], branch,
-                                                        business_date, body['expected_revision'], body['reason']))}
+                data = {'result': _wire(store.reopen_day(principal, body.get('request_id'), branch,
+                                                        business_date, body.get('expected_revision'), body.get('reason')))}
             else:
                 raise ValidationError('지원하지 않는 요청입니다.')
         return {**response, 'status': 200, 'data': data}
@@ -133,9 +156,9 @@ def dispatch_request(store, principal, validate, request):
         status, code, message, current = 403, 'forbidden', str(exc), None
     except LedgerError as exc:
         status, code, message, current = 400, 'validation', str(exc), None
-    except (ValueError, TypeError, KeyError, AttributeError, RecursionError):
-        status, code, message, current = 400, 'validation', '요청 형식을 확인해 주세요.', None
-    except Exception:
+    except Exception as exc:
+        # Never log request content or exception messages: either can contain patient data or credentials.
+        _LOG.error('Full web request failed (%s); request_id=%s', type(exc).__name__, response['request_id'])
         status, code, message, current = 503, 'unavailable', '서버 응답을 확인하지 못했습니다. 입력을 유지하고 다시 시도해 주세요.', None
     error = {'code': code, 'message': message}
     if current is not None:

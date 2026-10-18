@@ -178,3 +178,45 @@ def test_reconciliation_navigation_does_not_leave_unfinished_drafts(store):
     omitted = call(store, '/api/navigation', 'POST', {'target': 'workbench'})
     assert omitted['status'] == 400
     assert 'control' not in omitted
+
+
+@pytest.mark.parametrize('failure', [ValueError, TypeError, KeyError, AttributeError])
+def test_valid_button_requests_do_not_blame_users_for_internal_failures(store, monkeypatch, caplog, failure):
+    def broken(*_):
+        raise failure('private patient and postgresql://credentials')
+    monkeypatch.setattr(store, 'load_workspace', broken)
+    reply = call(store)
+    assert reply['status'] == 503
+    assert reply['data']['error']['code'] == 'unavailable'
+    assert '입력을 유지' in reply['data']['error']['message']
+    assert '요청 형식' not in reply['data']['error']['message']
+    assert 'private patient' not in str(reply) + caplog.text
+    assert 'postgresql' not in str(reply) + caplog.text
+    assert reply['request_id'] in caplog.text
+
+
+def test_invalid_selection_and_missing_button_fields_have_actionable_errors(store):
+    for path, body, expected in [
+        ('/api/navigation', {'target': 'analysis'}, '지점과 영업일'),
+        ('/api/navigation', {'target': 'analysis', 'branch': BRANCH, 'date': '2026-02-30'}, '지점과 영업일'),
+        ('/api/navigation', {'target': 'unknown'}, '지원하지 않는 화면'),
+        ('/api/ledger/actions', {'branch': BRANCH, 'date': DAY, 'scope': call(store)['data']['scope']}, '저장할 수납 내용'),
+    ]:
+        reply = call(store, path, 'POST', body)
+        assert reply['status'] == 400
+        assert expected in reply['data']['error']['message']
+        assert 'control' not in reply
+    scope = call(store)['data']['scope']
+    reply = call(store, '/api/ledger/close', 'POST', {'branch': BRANCH, 'date': DAY, 'scope': scope})
+    assert reply['status'] == 400
+    assert '개정' in reply['data']['error']['message']
+    assert store.load_day(ADMIN, BRANCH, DAY)['state'] == 'open'
+
+
+@pytest.mark.parametrize('body', [False, [], 'text'])
+def test_empty_non_object_bodies_are_rejected_before_dispatch(store, body):
+    reply = dispatch_request(store, ADMIN, lambda principal: principal, {
+        'request_id': str(uuid4()), 'method': 'GET', 'path': '/api/session', 'body': body,
+    })
+    assert reply['status'] == 400
+    assert '전송할 입력' in reply['data']['error']['message']

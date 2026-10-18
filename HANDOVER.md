@@ -678,3 +678,5 @@ git hook은 `.git/hooks`에 계정·환경마다 별도 설치가 필요해 *"�
 ## 2026-10-18 B 파일 대조 통합
 
 전체 B의 대조 작업대·오차 분석은 같은 `ledger_view=full-web` 안에서 업로드와 분석을 실행한다. `workspace`는 workbench/period/analysis/reconciliation-history다. 기존 app.py 계산/AI/내보내기/권한을 재사용하고 reconciliation_workspace.py/CSS가 B 메뉴와 스타일을 담당한다. 수납 원장/일일 마감/기간별 기록/변경 이력으로 돌아가도 B 경로를 유지한다. 정산 기록은 전용 DB의 분석 요약이며 운영 Google 기록과 분리한다. 회귀 검사는 scripts/smoke_reconciliation_workspace.py, CI에 포함.
+
+`web_bridge._parse_request`는 클라이언트 봉투·주소·본문을 실행 전에 검사한다. 내부 ValueError/TypeError/KeyError를 사용자 형식 오류로 변환하지 않는다. 입력 오류는 구체적 400 안내, 내부 오류는 입력 보존을 안내하는 503이며 서버 로그는 예외 종류와 요청 UUID만 기록한다. 요청 내용이나 예외 메시지는 환자 데이터·접속정보를 포함할 수 있으므로 로그에 추가하지 않는다.
